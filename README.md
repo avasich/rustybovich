@@ -1,0 +1,2 @@
+# rustybovich
+a wordle solver
