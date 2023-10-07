@@ -3,9 +3,6 @@
 
 use std::mem::MaybeUninit;
 
-use itertools::Itertools;
-use std::iter::Iterator;
-
 #[derive(Clone, Copy, Debug)]
 pub struct Word<const N: usize> {
     pub word: [char; N],
@@ -15,46 +12,28 @@ impl<const N: usize> Word<N> {
     pub fn matches(&self, pattern: &Pattern<N>) -> bool {
         let mut w: [_; N] = self.iter().map(|&c| Some(c)).collect_array();
 
-        for (i, c) in pattern.iter().enumerate() {
-            match *c {
-                Colored::Green(c1) => {
-                    if w[i].take() != Some(c1) {
-                        return false;
-                    }
-                }
-                _ => continue,
-            };
+        let green_matches = pattern.iter().enumerate().all(|(i, c)| match *c {
+            Colored::Green(c) if w[i].take() == Some(c) => true,
+            Colored::Green(_) => false,
+            _ => true,
+        });
+
+        if !green_matches {
+            return false;
         }
 
-        for (i, c) in pattern.iter().enumerate() {
-            match *c {
-                Colored::Green(_) => continue,
-                Colored::Yellow(c1) => {
-                    if w[i] == Some(c1) {
-                        return false;
-                    }
-
-                    let pos = w.iter().position(|&c2| c2 == Some(c1));
-
-                    match pos {
-                        Some(idx) => {
-                            w[idx] = None;
-                        }
-                        None => {
-                            return false;
-                        }
-                    };
+        pattern.iter().enumerate().all(|(i, c)| match *c {
+            Colored::Green(_) => true,
+            Colored::Yellow(letter) if w[i] == Some(letter) => false,
+            Colored::Yellow(letter) => match w.iter().position(|&other| other == Some(letter)) {
+                Some(j) => {
+                    w[j] = None;
+                    true
                 }
-                Colored::Gray(c1) => {
-                    let pos = w.iter().position(|&c2| c2 == Some(c1));
-                    if pos.is_some() {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        true
+                None => false,
+            },
+            Colored::Gray(letter) => w.iter().all(|&other| other != Some(letter)),
+        })
     }
 
     fn iter(&self) -> std::slice::Iter<'_, char> {
@@ -106,8 +85,7 @@ impl<const N: usize> Pattern<N> {
     }
 
     pub fn from_guess(guess: &Word<N>, answer: &Word<N>) -> Self {
-        let mut pattern: [_; N] = answer.iter().map(|&c| Colored::Gray(c)).collect_array();
-
+        let mut pattern: [_; N] = guess.iter().map(|&c| Colored::Gray(c)).collect_array();
         let mut word: [_; N] = answer.iter().map(|&c| Some(c)).collect_array();
 
         std::iter::zip(guess.word, answer.word)
@@ -122,15 +100,9 @@ impl<const N: usize> Pattern<N> {
             .enumerate()
             .filter(|&(_, (c1, c2))| c1 != c2)
             .for_each(|(i, (c1, _))| {
-                let pos = word.iter().position(|&c| c == Some(c1));
-                match pos {
-                    Some(idx) => {
-                        pattern[i] = Colored::Yellow(c1);
-                        word[idx] = None;
-                    }
-                    None => {
-                        pattern[i] = Colored::Gray(c1);
-                    }
+                if let Some(j) = word.iter().position(|&c| c == Some(c1)) {
+                    pattern[i] = Colored::Yellow(c1);
+                    word[j] = None;
                 }
             });
 
@@ -144,7 +116,12 @@ impl<const N: usize> Pattern<N> {
 
 impl<const N: usize> std::fmt::Display for Pattern<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let res = self.iter().map(|c| format!("{c}")).join("");
+        use std::fmt::Write;
+
+        let res = self.iter().fold(String::new(), |mut out, c| {
+            let _ = write!(out, "{c}");
+            out
+        });
 
         write!(f, "{res}")
     }
@@ -152,8 +129,8 @@ impl<const N: usize> std::fmt::Display for Pattern<N> {
 
 impl<const N: usize> From<Vec<Colored>> for Pattern<N> {
     fn from(value: Vec<Colored>) -> Self {
-        let word = value.try_into().unwrap();
-        Self { pattern: word }
+        let pattern = value.try_into().unwrap();
+        Self { pattern }
     }
 }
 
@@ -185,7 +162,7 @@ impl std::fmt::Display for Colored {
     }
 }
 
-trait CollectArray<const N: usize>: Iterator {
+trait CollectArray<const N: usize>: std::iter::Iterator {
     fn collect_array(&mut self) -> [Self::Item; N] {
         let mut array: [MaybeUninit<Self::Item>; N] = MaybeUninit::uninit_array();
 
@@ -197,4 +174,5 @@ trait CollectArray<const N: usize>: Iterator {
         unsafe { MaybeUninit::array_assume_init(array) }
     }
 }
-impl<const N: usize, I: Iterator> CollectArray<N> for I {}
+
+impl<const N: usize, I: std::iter::Iterator> CollectArray<N> for I {}
