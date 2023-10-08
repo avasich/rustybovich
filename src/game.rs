@@ -99,14 +99,14 @@ impl<const N: usize> Game<N> {
                     }
                     c @ Command::Guess => break c,
                     Command::Pattern(s) => {
-                        if s.len() == N {
+                        if s.chars().count() == N {
                             if self.words.contains(&Word::from(&s)) {
                                 break Command::Pattern(s);
                             } else {
                                 println!("no such word in the dictionary")
                             }
                         } else {
-                            println!("word should be {} letters long", N);
+                            println!("word should be {} letters long, actual length: {}", N, s.len());
                         }
                     }
                 }
