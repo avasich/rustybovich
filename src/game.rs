@@ -1,24 +1,80 @@
-use crate::words::{Pattern, Word};
+use std::str::FromStr;
+
+use crate::words::{IteratorIntoArrayError, Pattern, Word};
 use colored::*;
 use itertools::Itertools;
 use rayon::prelude::*;
 
-fn expected_left<const N: usize>(guess: &Word<N>, words: &[Word<N>]) -> f64 {
-    let matches: usize = words
+fn expected_left<const N: usize>(guess: &Word<N>, possible_answers: &[Word<N>]) -> f64 {
+    let matches: usize = possible_answers
         .iter()
-        .map(|word| {
-            let pattern = Pattern::from_guess(guess, word);
-            words.iter().filter(|w| w.matches(&pattern)).count()
+        .map(|answer| {
+            let pattern = Pattern::from_guess(guess, answer);
+            possible_answers
+                .iter()
+                .filter(|w| w.matches(&pattern))
+                .count()
         })
         .sum();
 
-    (matches as f64) / (words.len() as f64)
+    (matches as f64) / (possible_answers.len() as f64)
 }
 
-fn sort_guesses<const N: usize>(guesses: &[Word<N>], words: &[Word<N>]) -> Vec<(Word<N>, f64)> {
+fn sort_guesses<const N: usize>(
+    valid_guesses: &[Word<N>],
+    possible_answers: &[Word<N>],
+) -> Vec<(Word<N>, f64)> {
+    let mut a: Vec<_> = valid_guesses
+        .into_par_iter()
+        .map(|guess| (*guess, expected_left(guess, possible_answers)))
+        .collect();
+
+    a.as_parallel_slice_mut()
+        .sort_unstable_by(|(_w1, n1), (_w2, n2)| n1.partial_cmp(n2).unwrap());
+
+    a
+}
+
+fn slow_deep_rank_answer<const N: usize>(
+    guess: &Word<N>,
+    answer: &Word<N>,
+    words_left: &[Word<N>],
+) -> f64 {
+    if guess == answer {
+        return 1.0;
+    }
+    let pattern = Pattern::from_guess(guess, answer);
+    let matching_words = pattern.filter_words(words_left);
+
+    if matching_words.len() == words_left.len() {
+        panic!("wtf")
+    }
+
+    let rank = matching_words.iter().fold(0.0, |acc, word| {
+        acc + slow_deep_rank_answer(word, answer, &matching_words)
+    });
+
+    rank
+}
+
+fn slow_deep_rank_all_answers<const N: usize>(
+    guess: &Word<N>,
+    possible_answers: &[Word<N>],
+) -> f64 {
+    let rank = possible_answers.iter().fold(0.0, |arr, answer| {
+        arr + slow_deep_rank_answer(guess, answer, possible_answers)
+    });
+
+    rank / possible_answers.len() as f64
+}
+
+fn slow_deep_sort_guesses<const N: usize>(
+    guesses: &[Word<N>],
+    possible_answers: &[Word<N>],
+) -> Vec<(Word<N>, f64)> {
     let mut a: Vec<_> = guesses
         .into_par_iter()
-        .map(|guess| (*guess, expected_left(guess, words)))
+        .map(|guess| (*guess, slow_deep_rank_all_answers(guess, possible_answers)))
         .collect();
 
     a.as_parallel_slice_mut()
@@ -47,30 +103,44 @@ impl std::fmt::Display for Mode {
 enum Command {
     Next,
     Exit,
+    Clear,
     Show,
     ShowGuesses,
     Mode(Mode),
     Undo,
     Guess,
-    Pattern(String),
+    PatternDescription { word: String, colors: String },
 }
 
 pub struct Game<const N: usize> {
-    words: Vec<Word<N>>,
+    valid: Vec<Word<N>>,
+    answers: Vec<Word<N>>,
 }
 
 impl<const N: usize> Game<N> {
-    pub fn new(mut words: Vec<String>) -> Self {
-        words.sort();
+    pub fn new<S: AsRef<str>>(valid: &[S], answers: &[S]) -> Result<Self, IteratorIntoArrayError> {
+        let mut valid: Vec<_> = valid
+            .iter()
+            .map(S::as_ref)
+            .map(Word::from_str)
+            .collect::<Result<_, _>>()?;
+        let mut answers: Vec<_> = answers
+            .iter()
+            .map(S::as_ref)
+            .map(Word::from_str)
+            .collect::<Result<_, _>>()?;
 
-        Self {
-            words: words.into_iter().map(Word::from).collect(),
-        }
+        valid.extend(answers.clone());
+        valid.sort_unstable();
+        valid.dedup();
+        answers.sort_unstable();
+
+        Ok(Self { valid, answers })
     }
 
     fn game(&self) -> Command {
-        let mut words_left = self.words.clone();
-        let mut words_left_bk = self.words.clone();
+        let mut possible_answers = self.answers.clone();
+        let mut possible_answers_bk = possible_answers.clone();
         let mut guesses = vec![];
         let mut mode = Mode::Normal;
 
@@ -78,68 +148,50 @@ impl<const N: usize> Game<N> {
             let command = loop {
                 println!(
                     "[{mode}] | {} words left | {}:",
-                    words_left.len(),
+                    possible_answers.len(),
                     "pattern or command".cyan()
                 );
-                match Self::read_command() {
+                match self.read_command() {
                     c @ (Command::Next | Command::Exit) => return c,
+                    Command::Clear => {
+                        let _ = std::process::Command::new("clear").status().unwrap();
+                    }
                     Command::Show => {
                         println!(
                             "{} words left:\n[{}]",
-                            words_left.len(),
-                            Self::word_list_to_string(&words_left)
+                            possible_answers.len(),
+                            Self::word_list_to_string(&possible_answers)
                         );
                     }
-                    Command::ShowGuesses => {
-                        Self::show_guesses(&guesses, &words_left, 10);
-                    }
+                    Command::ShowGuesses => Self::show_guesses(&guesses, &possible_answers, 10),
                     Command::Mode(m) => mode = m,
-                    Command::Undo => {
-                        words_left = words_left_bk.clone();
-                    }
+                    Command::Undo => possible_answers = possible_answers_bk.clone(),
                     c @ Command::Guess => break c,
-                    Command::Pattern(s) => {
-                        if s.chars().count() == N {
-                            if self.words.contains(&Word::from(&s)) {
-                                break Command::Pattern(s);
-                            } else {
-                                println!("no such word in the dictionary")
-                            }
-                        } else {
-                            println!("word should be {} letters long, actual length: {}", N, s.len());
-                        }
-                    }
+                    c @ Command::PatternDescription { word: _, colors: _ } => break c,
                 }
             };
 
             match command {
                 Command::Guess => {
-                    let guess_from = match mode {
-                        Mode::Hard => &words_left,
-                        Mode::Normal => &self.words,
+                    let valid_guesses = match mode {
+                        Mode::Hard => &possible_answers,
+                        Mode::Normal => &self.valid,
                     };
-                    guesses = sort_guesses(guess_from, &words_left);
-
-                    Self::show_guesses(&guesses, &words_left, 10);
+                    guesses = sort_guesses(valid_guesses, &possible_answers);
+                    // guesses = slow_deep_sort_guesses(guess_from, &words_left);
+                    //
+                    Self::show_guesses(&guesses, &possible_answers, 10);
 
                     println!();
                 }
-                Command::Pattern(pattern_word) => {
-                    let pattern_desc = loop {
-                        let pattern_desk = std::io::stdin().lines().next().unwrap().unwrap();
-                        if pattern_desk.len() == N {
-                            break pattern_desk;
-                        } else {
-                            println!("expecting {} colors", N);
-                        }
-                    };
-                    let pattern = Pattern::<N>::from_description(&pattern_word, &pattern_desc);
+                Command::PatternDescription { word, colors } => {
+                    let pattern = Pattern::<N>::from_description(&word, &colors).unwrap();
 
-                    words_left_bk = words_left.clone();
-                    words_left = pattern.filter_words(&words_left);
+                    possible_answers_bk = possible_answers.clone();
+                    possible_answers = pattern.filter_words(&possible_answers);
 
-                    if words_left.len() == 1 {
-                        println!("answer: {}", format!("{}", words_left[0]).red());
+                    if possible_answers.len() == 1 {
+                        println!("answer: {}", format!("{}", possible_answers[0]).red());
                     }
                 }
                 _ => unreachable!(),
@@ -151,18 +203,51 @@ impl<const N: usize> Game<N> {
         while Command::Next == self.game() {}
     }
 
-    fn read_command() -> Command {
+    fn read_command(&self) -> Command {
         let line = std::io::stdin().lines().next().unwrap().unwrap();
         match line.as_str() {
             ":next" => Command::Next,
             ":exit" => Command::Exit,
+            ":clear" => Command::Clear,
             ":show" => Command::Show,
             ":showg" => Command::ShowGuesses,
             ":hard" => Command::Mode(Mode::Hard),
             ":norm" => Command::Mode(Mode::Normal),
             ":undo" => Command::Undo,
             "" | ":guess" => Command::Guess,
-            _ => Command::Pattern(line),
+            _ => {
+                let word = std::iter::once(line)
+                    .chain(std::io::stdin().lines().map(Result::unwrap))
+                    .find(|word| match word.chars().count() {
+                        n if n == N => {
+                            if self.valid.contains(&Word::from_str(word).unwrap()) {
+                                true
+                            } else {
+                                println!("no such word in the dictionary");
+                                false
+                            }
+                        }
+                        n => {
+                            println!("expecting {} letters, found {}", N, n);
+                            false
+                        }
+                    })
+                    .unwrap();
+
+                let colors = std::io::stdin()
+                    .lines()
+                    .map(Result::unwrap)
+                    .find(|word| match word.chars().count() {
+                        n if n == N => true,
+                        n => {
+                            println!("expecting {} colors, found {}", N, n);
+                            false
+                        }
+                    })
+                    .unwrap();
+
+                Command::PatternDescription { word, colors }
+            }
         }
     }
 
@@ -234,7 +319,7 @@ impl<const N: usize> Game<N> {
                 word.to_string().white()
             };
 
-            println!("{word_str}: {rank:.3}");
+            println!("{word_str}: {rank:.2}");
         }
     }
 }
