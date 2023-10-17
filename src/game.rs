@@ -10,7 +10,7 @@ fn expected_left<const N: usize>(guess: &Word<N>, possible_answers: &[Word<N>]) 
     let matches: usize = possible_answers
         .iter()
         .map(|answer| {
-            let pattern = Pattern::from_guess(guess, answer);
+            let pattern = Pattern::from_guess2(guess, answer);
             possible_answers
                 .iter()
                 .filter(|w| w.matches(&pattern))
@@ -44,7 +44,7 @@ fn slow_deep_rank_answer<const N: usize>(
     if guess == answer {
         return 1.0;
     }
-    let pattern = Pattern::from_guess(guess, answer);
+    let pattern = Pattern::from_guess2(guess, answer);
     let matching_words = pattern.filter_words(words_left);
 
     if matching_words.len() == words_left.len() {

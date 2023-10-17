@@ -13,65 +13,33 @@ impl<const N: usize> Word<N> {
     pub fn matches(&self, pattern: &Pattern<N>) -> bool {
         let mut letters: [_; N] = self.iter().cloned().map(Some).collect_array().unwrap();
 
-        let green_matches = std::iter::zip(letters.iter_mut(), pattern.iter()).all(
-            |(letter_option, pattern_letter)| match pattern_letter {
-                Colored::Green(letter) => letter_option.take_if(|c| *c == *letter).is_some(),
-                _ => true,
-            },
-        );
+        let green_matches = std::iter::zip(letters.iter_mut(), pattern.iter())
+            .filter(|(_, pattern_letter)| pattern_letter.letter_type == LetterType::Green)
+            .all(|(letter_option, pattern_letter)| {
+                letter_option
+                    .take_if(|c| *c == pattern_letter.letter)
+                    .is_some()
+            });
 
         if !green_matches {
             return false;
         }
 
-        pattern.iter().enumerate().all(|(i, c)| match *c {
-            Colored::Green(_) => true,
-            Colored::Yellow(letter) => letters
-                .iter()
-                .position(|&other| other.is_some_and(|c| c == letter))
-                .and_then(|j| letters[j].take_if(|_| i != j))
-                .is_some(),
-            Colored::Gray(letter) => letters
-                .iter()
-                .all(|&other| other.map_or(true, |c| c != letter)),
-        })
+        pattern
+            .iter()
+            .enumerate()
+            .all(|(i, &pattern_letter)| match pattern_letter.letter_type {
+                LetterType::Green => true,
+                LetterType::Yellow => letters
+                    .iter()
+                    .position(|&other| other.is_some_and(|c| c == pattern_letter.letter))
+                    .and_then(|j| letters[j].take_if(|_| i != j))
+                    .is_some(),
+                LetterType::Gray => letters
+                    .iter()
+                    .all(|&other| other.map_or(true, |c| c != pattern_letter.letter)),
+            })
     }
-
-    // pub fn matches2(&self, pattern: &Pattern<N>) -> bool {
-    //     let mut used = [false; N];
-
-    //     let green_matches = pattern.iter().enumerate().all(|(i, c)| match *c {
-    //         Colored::Green(c) if self.word[i] == c => {
-    //             used[i] = true;
-    //             true
-    //         }
-    //         Colored::Green(_) => false,
-    //         _ => true,
-    //     });
-
-    //     if !green_matches {
-    //         return false;
-    //     }
-
-    //     pattern.iter().enumerate().all(|(i, c)| match *c {
-    //         Colored::Green(_) => true,
-    //         Colored::Yellow(letter) if self.word[i] == letter => false,
-    //         Colored::Yellow(letter) => {
-    //             match std::iter::zip(used.iter(), self.iter())
-    //                 .position(|(&used, &other)| !used && other == letter)
-    //             {
-    //                 Some(j) => {
-    //                     used[j] = true;
-    //                     true
-    //                 }
-    //                 None => false,
-    //             }
-    //         }
-    //         Colored::Gray(letter) => std::iter::zip(used.iter(), self.iter())
-    //             .filter_map(|(&used, &other)| (!used).then_some(other))
-    //             .all(|other| other != letter),
-    //     })
-    // }
 
     fn iter(&self) -> std::slice::Iter<'_, char> {
         self.word.iter()
@@ -95,20 +63,20 @@ impl<const N: usize> std::fmt::Display for Word<N> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Pattern<const N: usize> {
-    pub pattern: [Colored; N],
+    pub pattern: [PatternLetter; N],
 }
 
 impl<const N: usize> Pattern<N> {
-    pub fn new(pattern: [Colored; N]) -> Self {
+    pub fn new(pattern: [PatternLetter; N]) -> Self {
         Self { pattern }
     }
 
     pub fn from_description(word: &str, descr: &str) -> Result<Pattern<N>, IteratorIntoArrayError> {
         let pattern = std::iter::zip(word.chars(), descr.chars())
             .map(|(letter, color)| match color {
-                'g' | '1' => letter.green(),
-                'y' | '2' => letter.yellow(),
-                _ => letter.gray(),
+                'g' | '1' => PatternLetter::green(letter),
+                'y' | '2' => PatternLetter::yellow(letter),
+                _ => PatternLetter::gray(letter),
             })
             .collect_array()?;
 
@@ -119,26 +87,58 @@ impl<const N: usize> Pattern<N> {
         let mut pattern: [_; N] = guess
             .iter()
             .cloned()
-            .map(Colored::Gray)
+            .map(PatternLetter::gray)
             .collect_array()
             .unwrap();
-        let mut word: [_; N] = answer.iter().cloned().map(Some).collect_array().unwrap();
+        let mut answer_letters: [_; N] = answer.iter().cloned().map(Some).collect_array().unwrap();
 
         std::iter::zip(guess.word, answer.word)
             .enumerate()
             .filter(|&(_, (c1, c2))| c1 == c2)
-            .for_each(|(i, (c1, _))| {
-                pattern[i] = Colored::Green(c1);
-                word[i] = None;
+            .for_each(|(i, _)| {
+                pattern[i].letter_type = LetterType::Green;
+                answer_letters[i].take();
             });
 
         std::iter::zip(guess.word, answer.word)
             .enumerate()
             .filter(|&(_, (c1, c2))| c1 != c2)
             .for_each(|(i, (c1, _))| {
-                if let Some(j) = word.iter().position(|&c| c == Some(c1)) {
-                    pattern[i] = Colored::Yellow(c1);
-                    word[j] = None;
+                if let Some(j) = answer_letters.iter().position(|&c| c == Some(c1)) {
+                    pattern[i].letter_type = LetterType::Yellow;
+                    answer_letters[j] = None;
+                }
+            });
+
+        Self { pattern }
+    }
+
+    pub fn from_guess2(guess: &Word<N>, answer: &Word<N>) -> Self {
+        let mut pattern: [_; N] = guess
+            .iter()
+            .cloned()
+            .map(PatternLetter::gray)
+            .collect_array()
+            .unwrap();
+        let mut answer_letters: [_; N] = answer.iter().cloned().map(Some).collect_array().unwrap();
+
+        std::iter::zip(pattern.iter_mut(), answer_letters.iter_mut())
+            .filter(|(guess_letter, answer_letter)| answer_letter.unwrap() == guess_letter.letter)
+            .for_each(|(guess_letter, answer_letter)| {
+                answer_letter.take();
+                guess_letter.letter_type = LetterType::Green;
+            });
+
+        std::iter::zip(guess.word, answer.word)
+            .enumerate()
+            .filter(|&(_, (c1, c2))| c1 != c2)
+            .for_each(|(i, (c1, _))| {
+                if let Some(j) = answer_letters
+                    .iter()
+                    .position(|&c| c.is_some_and(|c| c == c1))
+                {
+                    pattern[i].letter_type = LetterType::Yellow;
+                    answer_letters[j].take();
                 }
             });
 
@@ -157,7 +157,7 @@ impl<const N: usize> Pattern<N> {
             .collect()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, Colored> {
+    pub fn iter(&self) -> std::slice::Iter<'_, PatternLetter> {
         self.pattern.iter()
     }
 }
@@ -166,7 +166,7 @@ impl<const N: usize> std::fmt::Display for Pattern<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use std::fmt::Write;
 
-        let res = self.iter().fold(String::new(), |mut out, c| {
+        let res = self.iter().fold(String::with_capacity(N), |mut out, c| {
             let _ = write!(out, "{c}");
             out
         });
@@ -176,50 +176,71 @@ impl<const N: usize> std::fmt::Display for Pattern<N> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Colored {
-    Green(char),
-    Yellow(char),
-    Gray(char),
+pub enum LetterType {
+    Green,
+    Yellow,
+    Gray,
 }
 
-impl Colored {
-    pub fn value(&self) -> char {
-        *match self {
-            Colored::Green(c) => c,
-            Colored::Yellow(c) => c,
-            Colored::Gray(c) => c,
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct PatternLetter {
+    letter_type: LetterType,
+    letter: char,
+}
+
+impl PatternLetter {
+    fn green(letter: char) -> Self {
+        Self {
+            letter_type: LetterType::Green,
+            letter,
+        }
+    }
+
+    fn yellow(letter: char) -> Self {
+        Self {
+            letter_type: LetterType::Yellow,
+            letter,
+        }
+    }
+
+    fn gray(letter: char) -> Self {
+        Self {
+            letter_type: LetterType::Gray,
+            letter,
         }
     }
 }
 
-impl std::fmt::Display for Colored {
+impl std::fmt::Display for PatternLetter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use colored::*;
-        match self {
-            Colored::Green(c) => write!(f, "{}", format!("{c}").green()),
-            Colored::Yellow(c) => write!(f, "{}", format!("{c}").yellow()),
-            Colored::Gray(c) => write!(f, "{}", format!("{c}").white()),
+        use LetterType::*;
+
+        match self.letter_type {
+            Green => write!(f, "{}", format!("{}", self.letter).green()),
+            Yellow => write!(f, "{}", format!("{}", self.letter).yellow()),
+            Gray => write!(f, "{}", format!("{}", self.letter).white()),
         }
     }
 }
 
-trait WrapColored {
-    fn green(self) -> Colored;
-    fn yellow(self) -> Colored;
-    fn gray(self) -> Colored;
+trait WrapLetter {
+    fn green(self) -> PatternLetter;
+    fn yellow(self) -> PatternLetter;
+    fn gray(self) -> PatternLetter;
 }
 
-impl WrapColored for char {
-    fn green(self) -> Colored {
-        Colored::Green(self)
+impl WrapLetter for char {
+    fn green(self) -> PatternLetter {
+        PatternLetter::green(self)
     }
 
-    fn yellow(self) -> Colored {
-        Colored::Yellow(self)
+    fn yellow(self) -> PatternLetter {
+        PatternLetter::yellow(self)
     }
 
-    fn gray(self) -> Colored {
-        Colored::Gray(self)
+    fn gray(self) -> PatternLetter {
+        PatternLetter::gray(self)
     }
 }
 
@@ -246,10 +267,8 @@ trait CollectArray<const N: usize>: std::iter::Iterator {
 impl<const N: usize, I: std::iter::Iterator> CollectArray<N> for I {}
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
-    extern crate test;
-    use test::Bencher;
 
     #[test]
     fn test_parse_word() {
@@ -325,9 +344,10 @@ mod tests {
         word: &str,
         pattern_word: &str,
         colors: &str,
-    ) -> (Word<N>, Pattern<N>) {
+    ) -> (Word<N>, Word<N>, Pattern<N>) {
         (
             Word::from_str(word).unwrap(),
+            Word::from_str(pattern_word).unwrap(),
             Pattern::from_description(pattern_word, colors).unwrap(),
         )
     }
@@ -344,49 +364,41 @@ mod tests {
         }
     }
 
-    // struct Matcher2;
-
-    // impl MatcherBuilder for Matcher2 {
-    //     fn build<const N: usize>(&self) -> fn(&Word<N>, &Pattern<N>) -> bool {
-    //         Word::matches2
-    //     }
-    // }
-
     fn test_matches_common<B: MatcherBuilder>(matcher_builder: B) {
         let matcher = matcher_builder.build::<3>();
 
-        let (word, pattern) = word_and_pattern("bar", "bra", "gyy");
+        let (word, _, pattern) = word_and_pattern("bar", "bra", "gyy");
         assert!(matcher(&word, &pattern));
 
         let matcher = matcher_builder.build::<5>();
 
-        let (word, pattern) = word_and_pattern("crate", "slate", "..ggg");
+        let (word, _, pattern) = word_and_pattern("crate", "slate", "..ggg");
         assert!(matcher(&word, &pattern));
 
-        let (word, pattern) = word_and_pattern("abcde", "acbed", "gyyyy");
+        let (word, _, pattern) = word_and_pattern("abcde", "acbed", "gyyyy");
         assert!(matcher(&word, &pattern));
 
         let matcher = matcher_builder.build::<6>();
 
-        let (word, pattern) = word_and_pattern("github", "gluers", "g.y...");
+        let (word, _, pattern) = word_and_pattern("github", "gluers", "g.y...");
         assert!(matcher(&word, &pattern));
     }
 
     fn test_not_matches_common<B: MatcherBuilder>(matcher_builder: B) {
         let matcher = matcher_builder.build::<3>();
 
-        let (word, pattern) = word_and_pattern("bar", "baz", "gy.");
+        let (word, _, pattern) = word_and_pattern("bar", "baz", "gy.");
         assert!(!matcher(&word, &pattern));
 
         let matcher = matcher_builder.build::<6>();
 
-        let (word, pattern) = word_and_pattern("github", "gluers", "g.y..g");
+        let (word, _, pattern) = word_and_pattern("github", "gluers", "g.y..g");
         assert!(!matcher(&word, &pattern));
 
-        let (word, pattern) = word_and_pattern("github", "gluers", "ggy...");
+        let (word, _, pattern) = word_and_pattern("github", "gluers", "ggy...");
         assert!(!matcher(&word, &pattern));
 
-        let (word, pattern) = word_and_pattern("github", "gluers", "g.yy..");
+        let (word, _, pattern) = word_and_pattern("github", "gluers", "g.yy..");
         assert!(!matcher(&word, &pattern));
     }
 
@@ -395,121 +407,63 @@ mod tests {
         test_matches_common(Matcher1);
     }
 
-    // #[test]
-    // fn test_matches2() {
-    //     test_not_matches_common(Matcher2);
-    // }
-
     #[test]
     fn test_not_matches1() {
         test_not_matches_common(Matcher1);
     }
 
-    // #[test]
-    // fn test_not_matches2() {
-    //     test_not_matches_common(Matcher2);
-    // }
-
-    fn bench_matches_data_correct_5() -> Vec<(Word<5>, Pattern<5>)> {
-        vec![
-            word_and_pattern("abcde", "acbed", "gyyyy"),
-            word_and_pattern("crate", "slate", "..ggg"),
-            word_and_pattern("dicot", "brown", "...y."),
-            word_and_pattern("shirt", "thorp", "yg.g."),
-            word_and_pattern("abcde", "fghij", "....."),
-            word_and_pattern("abcde", "abcde", "ggggg"),
-            word_and_pattern("abcde", "abced", "gggyy"),
-            word_and_pattern("azcde", "xyzaz", "..yy."),
-            word_and_pattern("azcde", "xyzaz", "..yy."),
-            word_and_pattern("elbow", "light", "y...."),
-            word_and_pattern("elbow", "modus", ".y..."),
-            word_and_pattern("elbow", "below", "yyygg"),
-        ]
+    trait PatternBuilder {
+        fn build<const N: usize>(&self) -> fn(&Word<N>, &Word<N>) -> Pattern<N>;
     }
 
-    fn bench_matches_data_wrong_5() -> Vec<(Word<5>, Pattern<5>)> {
-        vec![
-            word_and_pattern("abcde", "acbed", "gyyy."),
-            word_and_pattern("crate", "slate", "y.ggg"),
-            word_and_pattern("dicot", "brown", ".y.y."),
-            word_and_pattern("shirt", "thorp", "y...."),
-            word_and_pattern("abcde", "fghij", "....g"),
-            word_and_pattern("abcde", "abcde", "yyggg"),
-        ]
+    struct PatternBuilder1;
+
+    impl PatternBuilder for PatternBuilder1 {
+        fn build<const N: usize>(&self) -> fn(&Word<N>, &Word<N>) -> Pattern<N> {
+            Pattern::from_guess
+        }
     }
 
-    // fn bench_matches_data_7() -> Vec<(Word<7>, Pattern<7>)> {
-    //     vec![
-    //         word_and_pattern("numeral", "lighter", "y....yy"),
-    //         word_and_pattern("numeral", "clarets", ".yyyy.."),
-    //         word_and_pattern("attests", "steward", "ygy.y.."),
-    //         word_and_pattern("attests", "peacock", ".yy...."),
-    //     ]
-    // }
+    struct PatternBuilder2;
 
-    #[bench]
-    fn bench_matches_correct_size_5_1(b: &mut Bencher) {
-        let to_check = bench_matches_data_correct_5();
-
-        b.iter(|| {
-            for (word, pattern) in &to_check {
-                word.matches(pattern);
-            }
-        });
+    impl PatternBuilder for PatternBuilder2 {
+        fn build<const N: usize>(&self) -> fn(&Word<N>, &Word<N>) -> Pattern<N> {
+            Pattern::from_guess2
+        }
     }
 
-    #[bench]
-    fn bench_matches_wrong_size_5_1(b: &mut Bencher) {
-        let to_check = bench_matches_data_wrong_5();
+    fn test_pattern_from_guess<B: PatternBuilder>(pattern_builder: B) {
+        let pattern_from_guess = pattern_builder.build::<5>();
 
-        b.iter(|| {
-            for (word, pattern) in &to_check {
-                word.matches(pattern);
-            }
-        });
+        let (answer, guess, pattern) = word_and_pattern("acbed", "abcde", "gyyyy");
+        assert_eq!(pattern_from_guess(&guess, &answer), pattern);
+
+        let (answer, guess, pattern) = word_and_pattern("crate", "slate", "..ggg");
+        assert_eq!(pattern_from_guess(&guess, &answer), pattern);
+
+        let (answer, guess, pattern) = word_and_pattern("dicot", "brown", "..y..");
+        assert_eq!(pattern_from_guess(&guess, &answer), pattern);
+
+        let (answer, guess, pattern) = word_and_pattern("shirt", "thorp", "yg.g.");
+        assert_eq!(pattern_from_guess(&guess, &answer), pattern);
+
+        let (answer, guess, pattern) = word_and_pattern("abcde", "fghij", ".....");
+        assert_eq!(pattern_from_guess(&guess, &answer), pattern);
+
+        let (answer, guess, pattern) = word_and_pattern("abcde", "abcde", "ggggg");
+        assert_eq!(pattern_from_guess(&guess, &answer), pattern);
+
+        let (answer, guess, pattern) = word_and_pattern("abcde", "abced", "gggyy");
+        assert_eq!(pattern_from_guess(&guess, &answer), pattern);
     }
 
-    // #[bench]
-    // fn bench_matches_correct_size_5_2(b: &mut Bencher) {
-    //     let to_check = bench_matches_data_correct_5();
+    #[test]
+    fn test_pattern_from_guess_1() {
+        test_pattern_from_guess(PatternBuilder1);
+    }
 
-    //     b.iter(|| {
-    //         for (word, pattern) in &to_check {
-    //             word.matches2(pattern);
-    //         }
-    //     });
-    // }
-
-    // #[bench]
-    // fn bench_matches_size_7_1(b: &mut Bencher) {
-    //     let to_check = bench_matches_data_7();
-
-    //     b.iter(|| {
-    //         for (word, pattern) in &to_check {
-    //             word.matches(pattern);
-    //         }
-    //     });
-    // }
-
-    // #[bench]
-    // fn bench_matches_size_7_2(b: &mut Bencher) {
-    //     let to_check = bench_matches_data_7();
-
-    //     b.iter(|| {
-    //         for (word, pattern) in &to_check {
-    //             word.matches2(pattern);
-    //         }
-    //     });
-    // }
-
-    // #[bench]
-    // fn bench_matches_size_7_3(b: &mut Bencher) {
-    //     let to_check = bench_matches_data_7();
-
-    //     b.iter(|| {
-    //         for (word, pattern) in &to_check {
-    //             word.matches3(pattern);
-    //         }
-    //     });
-    // }
+    #[test]
+    fn test_pattern_from_guess_2() {
+        test_pattern_from_guess(PatternBuilder2);
+    }
 }
