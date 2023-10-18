@@ -1,6 +1,6 @@
 use std::{mem::MaybeUninit, str::FromStr};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Word<const N: usize> {
     pub word: [char; N],
 }

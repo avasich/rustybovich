@@ -1,88 +1,11 @@
-#![allow(dead_code)]
 use std::str::FromStr;
 
-use crate::words::{IteratorIntoArrayError, Pattern, Word};
+use crate::{
+    guesser::Guesser,
+    words::{IteratorIntoArrayError, Pattern, Word},
+};
 use colored::*;
 use itertools::Itertools;
-use rayon::prelude::*;
-
-fn expected_left<const N: usize>(guess: &Word<N>, possible_answers: &[Word<N>]) -> f64 {
-    let matches: usize = possible_answers
-        .iter()
-        .map(|answer| {
-            let pattern = Pattern::from_guess2(guess, answer);
-            possible_answers
-                .iter()
-                .filter(|w| w.matches(&pattern))
-                .count()
-        })
-        .sum();
-
-    (matches as f64) / (possible_answers.len() as f64)
-}
-
-fn sort_guesses<const N: usize>(
-    valid_guesses: &[Word<N>],
-    possible_answers: &[Word<N>],
-) -> Vec<(Word<N>, f64)> {
-    let mut a: Vec<_> = valid_guesses
-        .into_par_iter()
-        .map(|guess| (*guess, expected_left(guess, possible_answers)))
-        .collect();
-
-    a.as_parallel_slice_mut()
-        .sort_unstable_by(|(_w1, n1), (_w2, n2)| n1.partial_cmp(n2).unwrap());
-
-    a
-}
-
-fn slow_deep_rank_answer<const N: usize>(
-    guess: &Word<N>,
-    answer: &Word<N>,
-    words_left: &[Word<N>],
-) -> f64 {
-    if guess == answer {
-        return 1.0;
-    }
-    let pattern = Pattern::from_guess2(guess, answer);
-    let matching_words = pattern.filter_words(words_left);
-
-    if matching_words.len() == words_left.len() {
-        panic!("wtf")
-    }
-
-    let rank = matching_words.iter().fold(0.0, |acc, word| {
-        acc + slow_deep_rank_answer(word, answer, &matching_words)
-    });
-
-    rank
-}
-
-fn slow_deep_rank_all_answers<const N: usize>(
-    guess: &Word<N>,
-    possible_answers: &[Word<N>],
-) -> f64 {
-    let rank = possible_answers.iter().fold(0.0, |arr, answer| {
-        arr + slow_deep_rank_answer(guess, answer, possible_answers)
-    });
-
-    rank / possible_answers.len() as f64
-}
-
-fn slow_deep_sort_guesses<const N: usize>(
-    guesses: &[Word<N>],
-    possible_answers: &[Word<N>],
-) -> Vec<(Word<N>, f64)> {
-    let mut a: Vec<_> = guesses
-        .into_par_iter()
-        .map(|guess| (*guess, slow_deep_rank_all_answers(guess, possible_answers)))
-        .collect();
-
-    a.as_parallel_slice_mut()
-        .sort_unstable_by(|(_w1, n1), (_w2, n2)| n1.partial_cmp(n2).unwrap());
-
-    a
-}
 
 #[derive(PartialEq, Clone)]
 enum Mode {
@@ -113,12 +36,13 @@ enum Command {
     PatternDescription { word: String, colors: String },
 }
 
-pub struct Game<const N: usize> {
+pub struct Game<const N: usize, G: Guesser<N>> {
     valid: Vec<Word<N>>,
     answers: Vec<Word<N>>,
+    guesser: G,
 }
 
-impl<const N: usize> Game<N> {
+impl<const N: usize, G: Guesser<N>> Game<N, G> {
     pub fn new<S: AsRef<str>>(valid: &[S], answers: &[S]) -> Result<Self, IteratorIntoArrayError> {
         let mut valid: Vec<_> = valid
             .iter()
@@ -136,7 +60,11 @@ impl<const N: usize> Game<N> {
         valid.dedup();
         answers.sort_unstable();
 
-        Ok(Self { valid, answers })
+        Ok(Self {
+            valid,
+            answers,
+            guesser: G::default(),
+        })
     }
 
     fn game(&self) -> Command {
@@ -178,15 +106,13 @@ impl<const N: usize> Game<N> {
                         Mode::Hard => &possible_answers,
                         Mode::Normal => &self.valid,
                     };
-                    guesses = sort_guesses(valid_guesses, &possible_answers);
-                    // guesses = slow_deep_sort_guesses(guess_from, &words_left);
-                    //
+                    guesses = self.guesser.rank_guesses(valid_guesses, &possible_answers);
                     Self::show_guesses(&guesses, &possible_answers, 10);
 
                     println!();
                 }
                 Command::PatternDescription { word, colors } => {
-                    let pattern = Pattern::<N>::from_description(&word, &colors).unwrap();
+                    let pattern = Pattern::from_description(&word, &colors).unwrap();
 
                     possible_answers_bk = possible_answers.clone();
                     possible_answers = pattern.filter_words(&possible_answers);
@@ -256,7 +182,7 @@ impl<const N: usize> Game<N> {
         words.iter().map(|w| format!("{}", w)).join(", ")
     }
 
-    fn show_guesses(sorted_guesses: &[(Word<N>, f64)], words_left: &[Word<N>], show_n: usize) {
+    fn show_guesses(sorted_guesses: &[(Word<N>, f32)], words_left: &[Word<N>], show_n: usize) {
         if sorted_guesses.is_empty() {
             println!("couldn't make any guesses");
             return;
@@ -269,58 +195,41 @@ impl<const N: usize> Game<N> {
 
         let threshold = 0.1;
 
-        let mut g1_iter = sorted_guesses
+        let mut prev_rank = 0;
+        let mut n = 0;
+
+        sorted_guesses
             .iter()
-            .filter(|(w, _)| words_left.contains(w));
-        let mut g1 = g1_iter.next();
-
-        let mut g2_iter = sorted_guesses
-            .iter()
-            .filter(|(w, _)| !words_left.contains(w));
-        let mut g2 = g2_iter.next();
-
-        let mut xs = vec![];
-        let mut last_g2_rank = None;
-        let mut i = 0;
-
-        while i < show_n {
-            match (g1, g2) {
-                (None, None) => break,
-                (Some(w1), None) => {
-                    i += 1;
-                    xs.push((w1, true));
-                    g1 = g1_iter.next();
+            .map(|(word, rank)| (word, rank, words_left.contains(word)))
+            .coalesce(|prev, curr| {
+                if curr.1 - prev.1 < threshold {
+                    return match (prev.2, curr.2) {
+                        (true, true) => Err((prev, curr)),
+                        (true, false) => Ok(prev),
+                        (false, true) => Ok(curr),
+                        (false, false) => Ok(prev),
+                    };
                 }
-                (None, Some(w2)) => {
-                    i += 1;
-                    xs.push((w2, false));
-                    g2 = g2_iter.next();
+                Err((prev, curr))
+            })
+            .take_while(|(_, rank, _)| {
+                n += 1;
+                let rank_int = (**rank * 100.0).round() as i32;
+                if n < show_n {
+                    prev_rank = rank_int;
+                    true
+                } else {
+                    prev_rank == rank_int
                 }
-                (Some(w1), Some(w2)) => {
-                    if w1.1 < w2.1 + threshold {
-                        i += 1;
-                        xs.push((w1, true));
-                        g1 = g1_iter.next();
-                    } else if Some(w2.1) == last_g2_rank {
-                        g2 = g2_iter.next();
-                    } else {
-                        i += 1;
-                        last_g2_rank = Some(w2.1);
-                        xs.push((w2, false));
-                        g2 = g2_iter.next();
-                    }
-                }
-            }
-        }
+            })
+            .for_each(|(word, rank, left)| {
+                let word_str = if left {
+                    word.to_string().green()
+                } else {
+                    word.to_string().white()
+                };
 
-        for ((word, rank), in_left) in xs {
-            let word_str = if in_left {
-                word.to_string().green()
-            } else {
-                word.to_string().white()
-            };
-
-            println!("{word_str}: {rank:.2}");
-        }
+                println!("{word_str}: {rank:.2}");
+            });
     }
 }

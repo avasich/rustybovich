@@ -1,4 +1,4 @@
-use rustybovich::game::Game;
+use rustybovich::{game::Game, guesser::{NaiveGuesser, BFSBruteforceGuesser}};
 use serde::Deserialize;
 use std::{error::Error, fs::File, io::BufReader, path::Path};
 
@@ -29,6 +29,6 @@ fn main() {
 
     let words = read_words_from_file(filename).unwrap();
 
-    let game: Game<5> = Game::new(&words.valid, &words.answers).unwrap();
+    let game: Game<5, BFSBruteforceGuesser> = Game::new(&words.valid, &words.answers).unwrap();
     game.run();
 }
