@@ -4,7 +4,7 @@ use super::Guesser;
 use crate::words::{Pattern, Word};
 use std::collections::{HashSet, VecDeque};
 
-#[derive(Default)]
+#[derive(Clone, Copy)]
 pub struct BFSBruteforceGuesser;
 
 impl BFSBruteforceGuesser {

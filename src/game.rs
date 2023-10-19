@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::{
-    guesser::Guesser,
+    guesser::GuesserWrapper,
     words::{IteratorIntoArrayError, Pattern, Word},
 };
 use colored::*;
@@ -36,14 +36,18 @@ enum Command {
     PatternDescription { word: String, colors: String },
 }
 
-pub struct Game<const N: usize, G: Guesser<N>> {
+pub struct Game<const N: usize> {
     valid: Vec<Word<N>>,
     answers: Vec<Word<N>>,
-    guesser: G,
+    guesser: GuesserWrapper,
 }
 
-impl<const N: usize, G: Guesser<N>> Game<N, G> {
-    pub fn new<S: AsRef<str>>(valid: &[S], answers: &[S]) -> Result<Self, IteratorIntoArrayError> {
+impl<const N: usize> Game<N> {
+    pub fn new<S: AsRef<str>>(
+        valid: &[S],
+        answers: &[S],
+        guesser: GuesserWrapper,
+    ) -> Result<Self, IteratorIntoArrayError> {
         let mut valid: Vec<_> = valid
             .iter()
             .map(S::as_ref)
@@ -63,7 +67,7 @@ impl<const N: usize, G: Guesser<N>> Game<N, G> {
         Ok(Self {
             valid,
             answers,
-            guesser: G::default(),
+            guesser,
         })
     }
 

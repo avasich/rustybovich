@@ -2,7 +2,7 @@ use crate::words::{Pattern, Word};
 
 use super::Guesser;
 
-#[derive(Default)]
+#[derive(Clone, Copy)]
 pub struct NaiveGuesser;
 
 impl NaiveGuesser {}
