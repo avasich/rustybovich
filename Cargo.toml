@@ -18,5 +18,9 @@ serde_json = "1.0.107"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [[bench]]
-name = "benchmark"
+name = "words"
+harness = false
+
+[[bench]]
+name = "guesser"
 harness = false

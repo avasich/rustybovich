@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use crate::{
     guesser::GuesserWrapper,
-    words::{IteratorIntoArrayError, Pattern, Word},
+    words::{Pattern, PatternCache, Word},
 };
 use colored::*;
 use itertools::Itertools;
@@ -43,38 +43,18 @@ pub struct Game<const N: usize> {
 }
 
 impl<const N: usize> Game<N> {
-    pub fn new<S: AsRef<str>>(
-        valid: &[S],
-        answers: &[S],
-        guesser: GuesserWrapper,
-    ) -> Result<Self, IteratorIntoArrayError> {
-        let mut valid: Vec<_> = valid
-            .iter()
-            .map(S::as_ref)
-            .map(Word::from_str)
-            .collect::<Result<_, _>>()?;
-        let mut answers: Vec<_> = answers
-            .iter()
-            .map(S::as_ref)
-            .map(Word::from_str)
-            .collect::<Result<_, _>>()?;
-
-        valid.extend(answers.clone());
-        valid.sort_unstable();
-        valid.dedup();
-        answers.sort_unstable();
-
-        Ok(Self {
+    pub fn new(valid: Vec<Word<N>>, answers: Vec<Word<N>>, guesser: GuesserWrapper) -> Self {
+        Self {
             valid,
             answers,
             guesser,
-        })
+        }
     }
 
-    fn game(&self) -> Command {
+    fn game(&self, pattern_cache: &PatternCache<N>) -> Command {
         let mut possible_answers = self.answers.clone();
         let mut possible_answers_bk = possible_answers.clone();
-        let mut guesses = vec![];
+        let mut ranked_guesses = vec![];
         let mut mode = Mode::Normal;
 
         loop {
@@ -96,9 +76,11 @@ impl<const N: usize> Game<N> {
                             Self::word_list_to_string(&possible_answers)
                         );
                     }
-                    Command::ShowGuesses => Self::show_guesses(&guesses, &possible_answers, 10),
+                    Command::ShowGuesses => {
+                        Self::show_guesses(&ranked_guesses, &possible_answers, 10)
+                    }
                     Command::Mode(m) => mode = m,
-                    Command::Undo =>{},// possible_answers = possible_answers_bk.clone(),
+                    Command::Undo => possible_answers = possible_answers_bk.clone(),
                     c @ Command::Guess => break c,
                     c @ Command::PatternDescription { word: _, colors: _ } => break c,
                 }
@@ -110,17 +92,17 @@ impl<const N: usize> Game<N> {
                         Mode::Hard => &possible_answers,
                         Mode::Normal => &self.valid,
                     };
-                    guesses = self
-                        .guesser
-                        .rank_guesses(&valid_guesses, &possible_answers, None);
-                    Self::show_guesses(&guesses, &possible_answers, 10);
+                    ranked_guesses =
+                        self.guesser
+                            .rank_guesses(valid_guesses, &possible_answers, pattern_cache);
+                    Self::show_guesses(&ranked_guesses, &possible_answers, 10);
 
                     println!();
                 }
                 Command::PatternDescription { word, colors } => {
                     let pattern = Pattern::from_description(&word, &colors).unwrap();
 
-                    possible_answers_bk = possible_answers.clone();
+                    possible_answers_bk.clone_from(&possible_answers);
                     possible_answers = pattern.filter_words(&possible_answers);
 
                     if possible_answers.len() == 1 {
@@ -133,7 +115,8 @@ impl<const N: usize> Game<N> {
     }
 
     pub fn run(&self) {
-        while Command::Next == self.game() {}
+        let pattern_cache = Pattern::prepare_all(&self.valid, &self.answers);
+        while Command::Next == self.game(&pattern_cache) {}
     }
 
     fn read_command(&self) -> Command {

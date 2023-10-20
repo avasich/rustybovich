@@ -1,4 +1,6 @@
-use std::{mem::MaybeUninit, str::FromStr};
+use std::{collections::HashMap, mem::MaybeUninit, str::FromStr};
+
+use itertools::Itertools;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Word<const N: usize> {
@@ -61,6 +63,8 @@ impl<const N: usize> std::fmt::Display for Word<N> {
     }
 }
 
+pub type PatternCache<'a, const N: usize> = HashMap<(&'a Word<N>, &'a Word<N>), Pattern<N>>;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Pattern<const N: usize> {
     pub pattern: [PatternLetter; N],
@@ -92,21 +96,25 @@ impl<const N: usize> Pattern<N> {
             .unwrap();
         let mut answer_letters: [_; N] = answer.iter().cloned().map(Some).collect_array().unwrap();
 
-        std::iter::zip(guess.word, answer.word)
-            .enumerate()
-            .filter(|&(_, (c1, c2))| c1 == c2)
-            .for_each(|(i, _)| {
-                pattern[i].letter_type = LetterType::Green;
-                answer_letters[i].take();
+        std::iter::zip(pattern.iter_mut(), answer_letters.iter_mut())
+            .filter(|(guess_letter, answer_letter)| answer_letter.unwrap() == guess_letter.letter)
+            .for_each(|(guess_letter, answer_letter)| {
+                answer_letter.take();
+                guess_letter.letter_type = LetterType::Green;
             });
 
-        std::iter::zip(guess.word, answer.word)
-            .enumerate()
-            .filter(|&(_, (c1, c2))| c1 != c2)
-            .for_each(|(i, (c1, _))| {
-                if let Some(j) = answer_letters.iter().position(|&c| c == Some(c1)) {
-                    pattern[i].letter_type = LetterType::Yellow;
-                    answer_letters[j] = None;
+        std::iter::zip(pattern.iter_mut(), answer.word)
+            .filter_map(|(guess_letter, answer_letter)| {
+                (guess_letter.letter != answer_letter).then_some(guess_letter)
+            })
+            .for_each(|guess_letter| {
+                let found = answer_letters.iter_mut().find(|answer_letter| {
+                    answer_letter.is_some_and(|letter| letter == guess_letter.letter)
+                });
+
+                if let Some(answer_letter) = found {
+                    answer_letter.take();
+                    guess_letter.letter_type = LetterType::Yellow;
                 }
             });
 
@@ -129,16 +137,17 @@ impl<const N: usize> Pattern<N> {
                 guess_letter.letter_type = LetterType::Green;
             });
 
-        std::iter::zip(guess.word, answer.word)
-            .enumerate()
-            .filter(|&(_, (c1, c2))| c1 != c2)
-            .for_each(|(i, (c1, _))| {
-                if let Some(j) = answer_letters
-                    .iter()
-                    .position(|&c| c.is_some_and(|c| c == c1))
-                {
-                    pattern[i].letter_type = LetterType::Yellow;
-                    answer_letters[j].take();
+        std::iter::zip(pattern.iter_mut(), answer.word)
+            .filter(|(guess_letter, answer_letter)| guess_letter.letter != *answer_letter)
+            .map(|(a, _)| a)
+            .for_each(|guess_letter| {
+                let found = answer_letters.iter_mut().find(|answer_letter| {
+                    answer_letter.is_some_and(|letter| letter == guess_letter.letter)
+                });
+
+                if let Some(answer_letter) = found {
+                    answer_letter.take();
+                    guess_letter.letter_type = LetterType::Yellow;
                 }
             });
 
@@ -159,6 +168,17 @@ impl<const N: usize> Pattern<N> {
 
     pub fn iter(&self) -> std::slice::Iter<'_, PatternLetter> {
         self.pattern.iter()
+    }
+
+    pub fn prepare_all<'a>(
+        valid_guesses: &'a [Word<N>],
+        possible_answers: &'a [Word<N>],
+    ) -> PatternCache<'a, N> {
+        valid_guesses
+            .iter()
+            .cartesian_product(possible_answers.iter())
+            .map(|(guess, answer)| ((guess, answer), Pattern::from_guess(guess, answer)))
+            .collect()
     }
 }
 
@@ -246,6 +266,14 @@ impl WrapLetter for char {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct IteratorIntoArrayError;
+
+impl std::error::Error for IteratorIntoArrayError {}
+
+impl std::fmt::Display for IteratorIntoArrayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "1")
+    }
+}
 
 trait CollectArray<const N: usize>: std::iter::Iterator {
     fn collect_array(&mut self) -> Result<[Self::Item; N], IteratorIntoArrayError> {
@@ -340,7 +368,7 @@ pub mod tests {
         );
     }
 
-    fn word_and_pattern<const N: usize>(
+    pub fn word_and_pattern<const N: usize>(
         word: &str,
         pattern_word: &str,
         colors: &str,
@@ -424,14 +452,6 @@ pub mod tests {
         }
     }
 
-    struct PatternBuilder2;
-
-    impl PatternBuilder for PatternBuilder2 {
-        fn build<const N: usize>(&self) -> fn(&Word<N>, &Word<N>) -> Pattern<N> {
-            Pattern::from_guess2
-        }
-    }
-
     fn test_pattern_from_guess<B: PatternBuilder>(pattern_builder: B) {
         let pattern_from_guess = pattern_builder.build::<5>();
 
@@ -458,12 +478,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_pattern_from_guess_1() {
-        test_pattern_from_guess(PatternBuilder1);
-    }
-
-    #[test]
     fn test_pattern_from_guess_2() {
-        test_pattern_from_guess(PatternBuilder2);
+        test_pattern_from_guess(PatternBuilder1);
     }
 }

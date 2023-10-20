@@ -1,6 +1,6 @@
-use crate::words::{Pattern, Word};
+use crate::words::{Pattern, PatternCache, Word};
 
-use super::{Guesser, PatternCache};
+use super::Guesser;
 
 pub struct NaiveGuesser;
 
@@ -12,12 +12,12 @@ impl<const N: usize> Guesser<N> for NaiveGuesser {
         guess: &Word<N>,
         _valid_guesses: &[Word<N>],
         possible_answers: &[Word<N>],
-        _: Option<&PatternCache<N>>,
+        _pattern_cache: &PatternCache<N>,
     ) -> f32 {
         let matches: usize = possible_answers
             .iter()
             .map(|answer| {
-                let pattern = Pattern::from_guess2(guess, answer);
+                let pattern = Pattern::from_guess(guess, answer);
                 possible_answers
                     .iter()
                     .filter(|w| w.matches(&pattern))

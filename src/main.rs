@@ -1,38 +1,25 @@
 use clap::{builder::PossibleValue, Parser, ValueEnum, ValueHint};
 use rustybovich::{
     game::Game,
-    guesser::{BFSSmartGuesser, GuesserWrapper, NaiveGuesser},
+    guesser::{BfsGuesser, GuesserWrapper, NaiveGuesser},
+    Dictionary,
 };
-use serde::Deserialize;
-use std::{error::Error, fs::File, io::BufReader, path::Path};
-
-#[derive(Deserialize)]
-struct WordsFile {
-    valid: Vec<String>,
-    answers: Vec<String>,
-}
-
-fn read_words_from_file<P: AsRef<Path>>(path: P) -> Result<WordsFile, Box<dyn Error>> {
-    let file = File::open(&path)?;
-    let reader = BufReader::new(file);
-    Ok(serde_json::from_reader(reader)?)
-}
 
 #[derive(Clone, Copy, Debug)]
 enum GuesserType {
     Naive,
-    BFSSmart,
+    Bfs,
 }
 
 impl ValueEnum for GuesserType {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Naive, Self::BFSSmart]
+        &[Self::Naive, Self::Bfs]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         Some(match self {
             Self::Naive => PossibleValue::new("naive"),
-            Self::BFSSmart => PossibleValue::new("bfs-smart"),
+            Self::Bfs => PossibleValue::new("bfs"),
         })
     }
 }
@@ -49,12 +36,12 @@ struct Arguments {
 fn main() {
     let args = Arguments::parse();
 
-    let WordsFile { valid, answers } = read_words_from_file(args.dictionary).unwrap();
+    let dictionary = Dictionary::from_file(args.dictionary).unwrap();
     let guesser = match args.guesser {
         GuesserType::Naive => GuesserWrapper::Naive(NaiveGuesser),
-        GuesserType::BFSSmart => GuesserWrapper::BFSSmart(BFSSmartGuesser),
+        GuesserType::Bfs => GuesserWrapper::Bfs(BfsGuesser),
     };
 
-    let game = Game::<5>::new(&valid, &answers, guesser).unwrap();
+    let game = Game::<5>::new(dictionary.valid, dictionary.answers, guesser);
     game.run();
 }
