@@ -98,7 +98,7 @@ impl<const N: usize> Game<N> {
                     }
                     Command::ShowGuesses => Self::show_guesses(&guesses, &possible_answers, 10),
                     Command::Mode(m) => mode = m,
-                    Command::Undo => possible_answers = possible_answers_bk.clone(),
+                    Command::Undo =>{},// possible_answers = possible_answers_bk.clone(),
                     c @ Command::Guess => break c,
                     c @ Command::PatternDescription { word: _, colors: _ } => break c,
                 }
@@ -110,7 +110,9 @@ impl<const N: usize> Game<N> {
                         Mode::Hard => &possible_answers,
                         Mode::Normal => &self.valid,
                     };
-                    guesses = self.guesser.rank_guesses(valid_guesses, &possible_answers);
+                    guesses = self
+                        .guesser
+                        .rank_guesses(&valid_guesses, &possible_answers, None);
                     Self::show_guesses(&guesses, &possible_answers, 10);
 
                     println!();

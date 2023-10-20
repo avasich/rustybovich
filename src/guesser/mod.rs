@@ -1,4 +1,7 @@
-use crate::words::Word;
+use std::collections::HashMap;
+
+use crate::words::{Pattern, Word};
+use itertools::Itertools;
 use rayon::prelude::*;
 
 pub mod naive_guesser;
@@ -7,51 +10,74 @@ pub use naive_guesser::NaiveGuesser;
 pub mod bfs_smart;
 pub use bfs_smart::BFSSmartGuesser;
 
-pub mod bfs_bruteforce_guesser;
-pub use bfs_bruteforce_guesser::BFSBruteforceGuesser;
+type PatternCache<'a, const N: usize> = HashMap<(&'a Word<N>, &'a Word<N>), Pattern<N>>;
 
-pub trait Guesser<const N: usize>: Send + Sync + Copy + Clone {
-    fn rank_guess(guess: &Word<N>, valid_guesses: &[Word<N>], possible_answers: &[Word<N>]) -> f32;
+pub fn prepare_patterns<'a, const N: usize>(
+    guesses: &'a [Word<N>],
+    answers: &'a [Word<N>],
+) -> PatternCache<'a, N> {
+    guesses
+        .iter()
+        .cartesian_product(answers.iter())
+        .map(|(guess, answer)| ((guess, answer), Pattern::from_guess2(guess, answer)))
+        .collect()
+}
 
-    fn rank_guesses(
+pub trait Guesser<const N: usize>: Send + Sync {
+    fn rank_guess(
         &self,
+        guess: &Word<N>,
         valid_guesses: &[Word<N>],
         possible_answers: &[Word<N>],
+        pattern_cache: Option<&PatternCache<N>>,
+    ) -> f32;
+
+    fn rank_guesses<'a>(
+        &self,
+        valid_guesses: &'a [Word<N>],
+        possible_answers: &[Word<N>],
+        pattern_cache: Option<&PatternCache<N>>,
     ) -> Vec<(Word<N>, f32)> {
-        let mut a: Vec<_> = valid_guesses
+        let mut sorted_guesses: Vec<_> = valid_guesses
             .into_par_iter()
             .map(|guess| {
                 (
                     *guess,
-                    Self::rank_guess(guess, valid_guesses, possible_answers),
+                    self.rank_guess(guess, valid_guesses, possible_answers, pattern_cache),
                 )
             })
             .collect();
 
-        a.as_parallel_slice_mut()
+        sorted_guesses
+            .as_parallel_slice_mut()
             .sort_unstable_by(|(_w1, n1), (_w2, n2)| n1.partial_cmp(n2).unwrap());
 
-        a
+        sorted_guesses
     }
 }
 
-#[derive(Copy, Clone)]
 pub enum GuesserWrapper {
     Naive(NaiveGuesser),
     BFSSmart(BFSSmartGuesser),
-    BFSStupid(BFSBruteforceGuesser),
 }
 
 impl GuesserWrapper {
-    pub fn rank_guesses<const N: usize>(
+    pub fn rank_guesses<'a, const N: usize>(
         &self,
-        valid_guesses: &[Word<N>],
+        valid_guesses: &'a [Word<N>],
         possible_answers: &[Word<N>],
+        pattern_cache: Option<&PatternCache<N>>,
     ) -> Vec<(Word<N>, f32)> {
         match self {
-            GuesserWrapper::Naive(g) => g.rank_guesses(valid_guesses, possible_answers),
-            GuesserWrapper::BFSSmart(g) => g.rank_guesses(valid_guesses, possible_answers),
-            GuesserWrapper::BFSStupid(g) => g.rank_guesses(valid_guesses, possible_answers),
+            GuesserWrapper::Naive(g) => {
+                g.rank_guesses(valid_guesses, possible_answers, pattern_cache)
+            }
+            GuesserWrapper::BFSSmart(g) => {
+                g.rank_guesses(valid_guesses, possible_answers, pattern_cache)
+            }
         }
     }
 }
+
+#[cfg(test)]
+mod tests {}

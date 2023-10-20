@@ -1,17 +1,18 @@
 use crate::words::{Pattern, Word};
 
-use super::Guesser;
+use super::{Guesser, PatternCache};
 
-#[derive(Clone, Copy)]
 pub struct NaiveGuesser;
 
 impl NaiveGuesser {}
 
 impl<const N: usize> Guesser<N> for NaiveGuesser {
     fn rank_guess(
+        &self,
         guess: &Word<N>,
         _valid_guesses: &[Word<N>],
         possible_answers: &[Word<N>],
+        _: Option<&PatternCache<N>>,
     ) -> f32 {
         let matches: usize = possible_answers
             .iter()

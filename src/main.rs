@@ -1,7 +1,7 @@
 use clap::{builder::PossibleValue, Parser, ValueEnum, ValueHint};
 use rustybovich::{
     game::Game,
-    guesser::{BFSBruteforceGuesser, BFSSmartGuesser, GuesserWrapper, NaiveGuesser},
+    guesser::{BFSSmartGuesser, GuesserWrapper, NaiveGuesser},
 };
 use serde::Deserialize;
 use std::{error::Error, fs::File, io::BufReader, path::Path};
@@ -22,19 +22,17 @@ fn read_words_from_file<P: AsRef<Path>>(path: P) -> Result<WordsFile, Box<dyn Er
 enum GuesserType {
     Naive,
     BFSSmart,
-    BFSStupid,
 }
 
 impl ValueEnum for GuesserType {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Naive, Self::BFSSmart, Self::BFSStupid]
+        &[Self::Naive, Self::BFSSmart]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         Some(match self {
             Self::Naive => PossibleValue::new("naive"),
-            Self::BFSSmart => PossibleValue::new("bfs_smart"),
-            Self::BFSStupid => PossibleValue::new("bfs_stupid"),
+            Self::BFSSmart => PossibleValue::new("bfs-smart"),
         })
     }
 }
@@ -55,7 +53,6 @@ fn main() {
     let guesser = match args.guesser {
         GuesserType::Naive => GuesserWrapper::Naive(NaiveGuesser),
         GuesserType::BFSSmart => GuesserWrapper::BFSSmart(BFSSmartGuesser),
-        GuesserType::BFSStupid => GuesserWrapper::BFSStupid(BFSBruteforceGuesser),
     };
 
     let game = Game::<5>::new(&valid, &answers, guesser).unwrap();
