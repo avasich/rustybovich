@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::{cmp::Ordering, collections::VecDeque};
 
 use priority_queue::PriorityQueue;
+use rayon::prelude::*;
 
 use crate::words::{Pattern, PatternCache, Word};
 
@@ -110,6 +111,7 @@ impl BfsGuesser {
         panic!("out of guesses!");
     }
 
+    #[allow(dead_code)]
     fn rank_guess_against_answer_deque<const N: usize>(
         first_guess: &Word<N>,
         answer: &Word<N>,
@@ -188,22 +190,22 @@ impl<const N: usize> Guesser<N> for BfsGuesser {
         _pattern_cache: &PatternCache<N>,
     ) -> f32 {
         let total: usize = possible_answers
-            .iter()
+            .into_par_iter()
             .map(|answer| {
-                // Self::rank_guess_against_answer(
-                //     guess,
-                //     answer,
-                //     valid_guesses,
-                //     possible_answers,
-                //     pattern_cache,
-                // )
-                Self::rank_guess_against_answer_deque(
+                Self::rank_guess_against_answer(
                     guess,
                     answer,
                     valid_guesses,
                     possible_answers,
                     _pattern_cache,
                 )
+                // Self::rank_guess_against_answer_deque(
+                //     guess,
+                //     answer,
+                //     valid_guesses,
+                //     possible_answers,
+                //     _pattern_cache,
+                // )
             })
             .sum();
         (total as f32) / (possible_answers.len() as f32)

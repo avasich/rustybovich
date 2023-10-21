@@ -35,7 +35,6 @@ struct Arguments {
 
 fn main() {
     let args = Arguments::parse();
-
     let dictionary = Dictionary::from_file(args.dictionary).unwrap();
     let guesser = match args.guesser {
         GuesserType::Naive => GuesserWrapper::Naive(NaiveGuesser),

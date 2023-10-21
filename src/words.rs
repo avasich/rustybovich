@@ -1,8 +1,11 @@
 use std::{collections::HashMap, mem::MaybeUninit, str::FromStr};
 
 use itertools::Itertools;
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, DeserializeFromStr, SerializeDisplay,
+)]
 pub struct Word<const N: usize> {
     pub word: [char; N],
 }
