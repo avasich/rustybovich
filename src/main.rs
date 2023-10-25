@@ -35,7 +35,7 @@ struct Arguments {
 
 fn main() {
     let args = Arguments::parse();
-    let dictionary = Dictionary::from_file(args.dictionary).unwrap();
+    let dictionary = Dictionary::read_from_json(args.dictionary).unwrap();
     let guesser = match args.guesser {
         GuesserType::Naive => GuesserWrapper::Naive(NaiveGuesser),
         GuesserType::Bfs => GuesserWrapper::Bfs(BfsGuesser),
@@ -43,4 +43,14 @@ fn main() {
 
     let game = Game::<5>::new(dictionary.valid, dictionary.answers, guesser);
     game.run();
+
+    // Dictionary::<5>::read_from_txt("assets/en-nyt-2.valid.txt", "assets/en-nyt-2.answers.txt")
+    //     .unwrap()
+    //     .write_to_json("assets/en-nyt-2-sorted.json")
+    //     .unwrap();
+
+    // Dictionary::<5>::read_from_json("assets/en-nyt.json")
+    //     .unwrap()
+    //     .write_to_json("assets/en-nyt-sorted.json")
+    //     .unwrap();
 }

@@ -1,12 +1,13 @@
-use std::collections::BTreeSet;
-use std::{cmp::Ordering, collections::VecDeque};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeSet, VecDeque},
+};
 
 use priority_queue::PriorityQueue;
 use rayon::prelude::*;
 
-use crate::words::{Pattern, PatternCache, Word};
-
 use super::Guesser;
+use crate::words::{Pattern1, PatternCache, Word1};
 
 #[derive(PartialEq, Eq)]
 pub struct P {
@@ -43,15 +44,15 @@ impl BfsGuesser {
 
     #[allow(dead_code)]
     fn rank_guess_against_answer<const N: usize>(
-        first_guess: &Word<N>,
-        answer: &Word<N>,
-        valid_guesses: &[Word<N>],
-        possible_answers: &[Word<N>],
-        _pattern_cache: &PatternCache<N>,
+        first_guess: &Word1<N>,
+        answer: &Word1<N>,
+        valid_guesses: &[Word1<N>],
+        possible_answers: &[Word1<N>],
+        // _pattern_cache: &PatternCache<N>,
     ) -> usize {
         let valid_guesses = BTreeSet::from_iter(valid_guesses.iter());
 
-        let first_pattern = Pattern::from_guess(first_guess, answer);
+        let first_pattern = Pattern1::from_guess(first_guess, answer);
         let first_answeres_left = possible_answers
             .iter()
             .filter(|answer| answer.matches(&first_pattern))
@@ -95,7 +96,7 @@ impl BfsGuesser {
                     .filter(|&possible_answer| {
                         guesses
                             .iter()
-                            .map(|&guess| Pattern::from_guess(guess, answer))
+                            .map(|&guess| Pattern1::from_guess(guess, answer))
                             .all(|pattern| possible_answer.matches(&pattern))
                     })
                     .count();
@@ -113,15 +114,15 @@ impl BfsGuesser {
 
     #[allow(dead_code)]
     fn rank_guess_against_answer_deque<const N: usize>(
-        first_guess: &Word<N>,
-        answer: &Word<N>,
-        valid_guesses: &[Word<N>],
-        possible_answers: &[Word<N>],
+        first_guess: &Word1<N>,
+        answer: &Word1<N>,
+        valid_guesses: &[Word1<N>],
+        possible_answers: &[Word1<N>],
         _pattern_cache: &PatternCache<N>,
     ) -> usize {
         let valid_guesses = BTreeSet::from_iter(valid_guesses.iter());
 
-        let first_pattern = Pattern::from_guess(first_guess, answer);
+        let first_pattern = Pattern1::from_guess(first_guess, answer);
         let first_answeres_left = possible_answers
             .iter()
             .filter(|answer| answer.matches(&first_pattern))
@@ -160,7 +161,7 @@ impl BfsGuesser {
                     .filter(|&possible_answer| {
                         guesses
                             .iter()
-                            .map(|&guess| Pattern::from_guess(guess, answer))
+                            .map(|&guess| Pattern1::from_guess(guess, answer))
                             .all(|pattern| possible_answer.matches(&pattern))
                         // cache
                         // .entry((guess, answer))
@@ -184,10 +185,10 @@ impl BfsGuesser {
 impl<const N: usize> Guesser<N> for BfsGuesser {
     fn rank_guess(
         &self,
-        guess: &Word<N>,
-        valid_guesses: &[Word<N>],
-        possible_answers: &[Word<N>],
-        _pattern_cache: &PatternCache<N>,
+        guess: &Word1<N>,
+        valid_guesses: &[Word1<N>],
+        possible_answers: &[Word1<N>],
+        // _pattern_cache: &PatternCache<N>,
     ) -> f32 {
         let total: usize = possible_answers
             .into_par_iter()
@@ -197,7 +198,7 @@ impl<const N: usize> Guesser<N> for BfsGuesser {
                     answer,
                     valid_guesses,
                     possible_answers,
-                    _pattern_cache,
+                    // _pattern_cache,
                 )
                 // Self::rank_guess_against_answer_deque(
                 //     guess,

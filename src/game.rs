@@ -1,11 +1,12 @@
 use std::str::FromStr;
 
-use crate::{
-    guesser::GuesserWrapper,
-    words::{Pattern, PatternCache, Word},
-};
 use colored::*;
 use itertools::Itertools;
+
+use crate::{
+    guesser_family::Guesser,
+    words_family::{Family, WordTrait},
+};
 
 #[derive(PartialEq, Clone)]
 enum Mode {
@@ -33,17 +34,21 @@ enum Command {
     Mode(Mode),
     Undo,
     Guess,
-    PatternDescription { word: String, colors: String },
+    PatternDescription { colors: String, word: String },
 }
 
-pub struct Game<const N: usize> {
-    valid: Vec<Word<N>>,
-    answers: Vec<Word<N>>,
-    guesser: GuesserWrapper,
+pub struct Game<F: Family, G: Guesser<F>> {
+    valid: Vec<F::Word>,
+    answers: Vec<F::Word>,
+    guesser: G,
 }
 
-impl<const N: usize> Game<N> {
-    pub fn new(valid: Vec<Word<N>>, answers: Vec<Word<N>>, guesser: GuesserWrapper) -> Self {
+impl<F: Family, G: Guesser<F>> Game<F, G>
+where
+    <F::Word as FromStr>::Err: std::fmt::Debug,
+    <F::Pattern as FromStr>::Err: std::fmt::Debug,
+{
+    pub fn new(valid: Vec<F::Word>, answers: Vec<F::Word>, guesser: G) -> Self {
         Self {
             valid,
             answers,
@@ -51,7 +56,7 @@ impl<const N: usize> Game<N> {
         }
     }
 
-    fn game(&self, pattern_cache: &PatternCache<N>) -> Command {
+    fn game(&self) -> Command {
         let mut possible_answers = self.answers.clone();
         let mut possible_answers_bk = possible_answers.clone();
         let mut ranked_guesses = vec![];
@@ -92,18 +97,49 @@ impl<const N: usize> Game<N> {
                         Mode::Hard => &possible_answers,
                         Mode::Normal => &self.valid,
                     };
-                    ranked_guesses =
-                        self.guesser
-                            .rank_guesses(valid_guesses, &possible_answers, pattern_cache);
+                    ranked_guesses = self.guesser.rank_guesses(
+                        valid_guesses,
+                        &possible_answers,
+                        // pattern_cache
+                    );
+
+                    {
+                        println!("writing guesses");
+                        use std::fs::{self};
+                        fs::write(
+                            "tmp/ranked_dump.txt",
+                            ranked_guesses
+                                .iter()
+                                .map(|(w, r)| format!("{w} : {r}"))
+                                .join("\n"),
+                        )
+                        .expect("failed to write answers");
+                    }
+
                     Self::show_guesses(&ranked_guesses, &possible_answers, 10);
 
                     println!();
                 }
-                Command::PatternDescription { word, colors } => {
-                    let pattern = Pattern::from_description(&word, &colors).unwrap();
+                Command::PatternDescription { colors, word } => {
+                    // let pattern = Pattern1::from_description(&colors, &word).unwrap();
+                    let pattern = F::Pattern::from_str(&colors).unwrap();
+                    let guess = word.parse().unwrap();
 
                     possible_answers_bk.clone_from(&possible_answers);
-                    possible_answers = pattern.filter_words(&possible_answers);
+                    possible_answers = possible_answers
+                        .into_iter()
+                        .filter(|answer| answer.matches(&pattern, &guess))
+                        .collect_vec();
+                    // possible_answers = pattern.filter_words(&possible_answers);
+
+                    // {
+                    //     use std::fs::{self};
+                    //     fs::write(
+                    //         "tmp/answers_dump.txt",
+                    //         possible_answers.iter().map(Word1::to_string).join("\n"),
+                    //     )
+                    //     .expect("failed to write answers");
+                    // }
 
                     if possible_answers.len() == 1 {
                         println!("answer: {}", format!("{}", possible_answers[0]).red());
@@ -115,8 +151,11 @@ impl<const N: usize> Game<N> {
     }
 
     pub fn run(&self) {
-        let pattern_cache = Pattern::prepare_all(&self.valid, &self.answers);
-        while Command::Next == self.game(&pattern_cache) {}
+        // let pattern_cache = Pattern1::prepare_all(&self.valid, &self.answers);
+        while Command::Next
+            == self.game(
+            // &pattern_cache
+        ) {}
     }
 
     fn read_command(&self) -> Command {
@@ -136,7 +175,7 @@ impl<const N: usize> Game<N> {
                     .chain(std::io::stdin().lines().map(Result::unwrap))
                     .find(|word| match word.chars().count() {
                         n if n == N => {
-                            if self.valid.contains(&Word::from_str(word).unwrap()) {
+                            if self.valid.contains(&F::Word::from_str(word).unwrap()) {
                                 true
                             } else {
                                 println!("no such word in the dictionary");
@@ -167,17 +206,17 @@ impl<const N: usize> Game<N> {
         }
     }
 
-    fn word_list_to_string(words: &[Word<N>]) -> String {
+    fn word_list_to_string(words: &[F::Word]) -> String {
         words.iter().map(|w| format!("{}", w)).join(", ")
     }
 
-    fn show_guesses(sorted_guesses: &[(Word<N>, f32)], words_left: &[Word<N>], show_n: usize) {
-        if sorted_guesses.is_empty() {
+    fn show_guesses(ranked_guesses: &[(F::Word, f32)], answers_left: &[F::Word], show_n: usize) {
+        if ranked_guesses.is_empty() {
             println!("couldn't make any guesses");
             return;
         }
 
-        if words_left.is_empty() {
+        if answers_left.is_empty() {
             println!("no possible words left");
             return;
         }
@@ -187,9 +226,9 @@ impl<const N: usize> Game<N> {
         let mut prev_rank = 0;
         let mut n = 0;
 
-        sorted_guesses
+        ranked_guesses
             .iter()
-            .map(|(word, rank)| (word, rank, words_left.contains(word)))
+            .map(|(word, rank)| (word, rank, answers_left.contains(word)))
             .coalesce(|prev, curr| {
                 if curr.1 - prev.1 < threshold {
                     return match (prev.2, curr.2) {

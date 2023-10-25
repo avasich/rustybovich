@@ -1,1 +1,9 @@
+# unstable_features = true
 trailing_comma = "Vertical"
+imports_granularity = "Crate"
+edition = "2021"
+# fn_single_line = true
+imports_layout = "HorizontalVertical"
+overflow_delimited_expr = true
+group_imports = "StdExternalCrate"
+reorder_impl_items = true

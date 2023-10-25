@@ -1,101 +1,182 @@
 use std::str::FromStr;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rustybovich::words::{Pattern, Word};
+use itertools::Itertools;
+use rustybovich::words::{Pattern1, Pattern2, Word1, Word2};
 
-fn word_and_pattern<const N: usize>(
-    word: &str,
-    pattern_word: &str,
-    colors: &str,
-) -> (Word<N>, Word<N>, Pattern<N>) {
+fn pattern_and_words_w1<const N: usize>(
+    pattern: &str,
+    guess: &str,
+    answer: &str,
+) -> (Pattern1<N>, Word1<N>, Word1<N>) {
     (
-        Word::from_str(word).unwrap(),
-        Word::from_str(pattern_word).unwrap(),
-        Pattern::from_description(pattern_word, colors).unwrap(),
+        Pattern1::from_description(guess, pattern).unwrap(),
+        Word1::from_str(guess).unwrap(),
+        Word1::from_str(answer).unwrap(),
     )
 }
 
-fn data_words_and_patterns_correct_size_5() -> Vec<(Word<5>, Word<5>, Pattern<5>)> {
+fn pattern_and_words_w2<const N: usize>(
+    pattern: &str,
+    guess: &str,
+    answer: &str,
+) -> (Pattern2<N>, Word2<N>, Word2<N>) {
+    (
+        pattern.parse().unwrap(),
+        guess.parse().unwrap(),
+        answer.parse().unwrap(),
+    )
+}
+
+fn data_correct_size_5_raw() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
-        word_and_pattern("abcde", "acbed", "gyyyy"),
-        word_and_pattern("crate", "slate", "..ggg"),
-        word_and_pattern("dicot", "brown", "..y.."),
-        word_and_pattern("shirt", "thorp", "yg.g."),
-        word_and_pattern("abcde", "fghij", "....."),
-        word_and_pattern("abcde", "abcde", "ggggg"),
-        word_and_pattern("abcde", "abced", "gggyy"),
-        word_and_pattern("azcde", "xyzaz", "..yy."),
-        word_and_pattern("azcde", "xyzaz", "..yy."),
-        word_and_pattern("elbow", "light", "y...."),
-        word_and_pattern("elbow", "modus", ".y..."),
-        word_and_pattern("elbow", "below", "yyygg"),
+        ("gyyyy", "acbed", "abcde"),
+        ("..ggg", "slate", "crate"),
+        ("..y..", "brown", "dicot"),
+        ("yg.g.", "thorp", "shirt"),
+        (".....", "fghij", "abcde"),
+        ("ggggg", "abcde", "abcde"),
+        ("gggyy", "abced", "abcde"),
+        ("..yy.", "xyzaz", "azcde"),
+        ("..yy.", "xyzaz", "azcde"),
+        ("y....", "light", "elbow"),
+        (".y...", "modus", "elbow"),
+        ("yyygg", "below", "elbow"),
     ]
 }
 
-fn data_words_and_patterns_incorrect_size_5() -> Vec<(Word<5>, Word<5>, Pattern<5>)> {
+fn data_incorrect_size_5_raw() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
-        word_and_pattern("abcde", "acbed", "gyyy."),
-        word_and_pattern("crate", "slate", "y.ggg"),
-        word_and_pattern("dicot", "brown", ".y.y."),
-        word_and_pattern("shirt", "thorp", "y...."),
-        word_and_pattern("abcde", "fghij", "....g"),
-        word_and_pattern("abcde", "abcde", "yyggg"),
+        ("gyyy.", "acbed", "abcde"),
+        ("y.ggg", "slate", "crate"),
+        (".y.y.", "brown", "dicot"),
+        ("y....", "thorp", "shirt"),
+        ("....g", "fghij", "abcde"),
+        ("yyggg", "abcde", "abcde"),
     ]
 }
 
-fn data_words_and_patterns_correct_size_7() -> Vec<(Word<7>, Word<7>, Pattern<7>)> {
+fn data_correct_size_7_raw() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
-        word_and_pattern("numeral", "lighter", "y....yy"),
-        word_and_pattern("numeral", "clarets", ".yyyy.."),
-        word_and_pattern("attests", "steward", "ygy.y.."),
-        word_and_pattern("attests", "peacock", ".yy...."),
+        ("y....yy", "lighter", "numeral"),
+        (".yyyy..", "clarets", "numeral"),
+        ("ygy.y..", "steward", "attests"),
+        (".yy....", "peacock", "attests"),
     ]
+}
+
+fn data_correct_size_5_w1() -> Vec<(Pattern1<5>, Word1<5>, Word1<5>)> {
+    data_correct_size_5_raw()
+        .into_iter()
+        .map(|(pattern, guess, answer)| pattern_and_words_w1(pattern, guess, answer))
+        .collect_vec()
+}
+
+fn data_correct_size_5_w2() -> Vec<(Pattern2<5>, Word2<5>, Word2<5>)> {
+    data_correct_size_5_raw()
+        .into_iter()
+        .map(|(pattern, guess, answer)| pattern_and_words_w2(pattern, guess, answer))
+        .collect_vec()
+}
+
+fn data_incorrect_size_5_w1() -> Vec<(Pattern1<5>, Word1<5>, Word1<5>)> {
+    data_incorrect_size_5_raw()
+        .into_iter()
+        .map(|(pattern, guess, answer)| pattern_and_words_w1(pattern, guess, answer))
+        .collect_vec()
+}
+
+fn data_incorrect_size_5_w2() -> Vec<(Pattern2<5>, Word2<5>, Word2<5>)> {
+    data_incorrect_size_5_raw()
+        .into_iter()
+        .map(|(pattern, guess, answer)| pattern_and_words_w2(pattern, guess, answer))
+        .collect_vec()
+}
+
+fn data_correct_size_7_w1() -> Vec<(Pattern1<7>, Word1<7>, Word1<7>)> {
+    data_correct_size_7_raw()
+        .into_iter()
+        .map(|(pattern, guess, answer)| pattern_and_words_w1(pattern, guess, answer))
+        .collect_vec()
+}
+
+fn data_correct_size_7_w2() -> Vec<(Pattern2<7>, Word2<7>, Word2<7>)> {
+    data_correct_size_7_raw()
+        .into_iter()
+        .map(|(pattern, guess, answer)| pattern_and_words_w2(pattern, guess, answer))
+        .collect_vec()
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let correct_size_5 = data_words_and_patterns_correct_size_5();
-
-    c.bench_function("from_guess_1", |b| {
+    c.bench_function("from_guess:size_5-w1", |b| {
+        let data = data_correct_size_5_w1();
         b.iter(|| {
-            for (answer, guess, _) in &correct_size_5 {
-                black_box(Pattern::from_guess(guess, answer));
-            }
+            data.iter().for_each(|(_pattern, guess, answer)| {
+                black_box(Pattern1::from_guess(guess, answer));
+            })
         })
     });
 
-    c.bench_function("from_guess_2", |b| {
+    c.bench_function("from_guess:size_5-w2", |b| {
+        let data = data_correct_size_5_w2();
         b.iter(|| {
-            for (answer, guess, _) in &correct_size_5 {
-                black_box(Pattern::from_guess2(guess, answer));
-            }
+            data.iter().for_each(|(_pattern, guess, answer)| {
+                black_box(Pattern2::from_guess(guess, answer));
+            })
         })
     });
 
-    c.bench_function("matches_correct_size_5_1", |b| {
+    c.bench_function("matches_correct:size_5-w1", |b| {
+        let data = data_correct_size_5_w1();
         b.iter(|| {
-            for (word, _, pattern) in &correct_size_5 {
-                word.matches(pattern);
-            }
+            data.iter().for_each(|(pattern, _guess, answer)| {
+                answer.matches(pattern);
+            })
         })
     });
 
-    let incorrect_size_5 = data_words_and_patterns_incorrect_size_5();
-
-    c.bench_function("matches_incorrect_size_5_1", |b| {
+    c.bench_function("matches_correct:size_5-w2", |b| {
+        let data = data_correct_size_5_w2();
         b.iter(|| {
-            for (word, _, pattern) in &incorrect_size_5 {
-                word.matches(pattern);
-            }
+            data.iter().for_each(|(pattern, guess, answer)| {
+                answer.matches(pattern, guess);
+            })
         })
     });
 
-    let correct_size_7 = data_words_and_patterns_correct_size_7();
-
-    c.bench_function("matches_correct_size_7_1", |b| {
+    c.bench_function("matches_incorrect:size_5-w1", |b| {
+        let data = data_incorrect_size_5_w1();
         b.iter(|| {
-            for (word, _, pattern) in &correct_size_7 {
-                word.matches(pattern);
-            }
+            data.iter().for_each(|(pattern, _guess, answer)| {
+                answer.matches(pattern);
+            })
+        })
+    });
+
+    c.bench_function("matches_incorrect:size_5-w2", |b| {
+        let data = data_incorrect_size_5_w2();
+        b.iter(|| {
+            data.iter().for_each(|(pattern, guess, answer)| {
+                answer.matches(pattern, guess);
+            })
+        })
+    });
+
+    c.bench_function("matches_correct:size_7-w1", |b| {
+        let data = data_correct_size_7_w1();
+        b.iter(|| {
+            data.iter().for_each(|(pattern, _guess, answer)| {
+                answer.matches(pattern);
+            })
+        })
+    });
+
+    c.bench_function("matches_correct:size_7-w1", |b| {
+        let data = data_correct_size_7_w2();
+        b.iter(|| {
+            data.iter().for_each(|(pattern, guess, answer)| {
+                answer.matches(pattern, guess);
+            })
         })
     });
 }
