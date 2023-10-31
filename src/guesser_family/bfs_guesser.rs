@@ -1,6 +1,10 @@
 use std::{cmp::Ordering, collections::BTreeSet, hash::Hash};
 
 use priority_queue::PriorityQueue;
+use rayon::{
+    prelude::{IntoParallelIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 
 use crate::{
     guesser_family::Guesser,
@@ -13,31 +17,26 @@ impl<F: Family> Guesser<F> for BfsGuesser
 where
     F::Word: Hash,
 {
-    fn rank_guess(
+    fn rank_guesses(
         &self,
-        guess: &F::Word,
-        valid_guesses: &[F::Word],
-        possible_answers: &[F::Word],
-    ) -> f32 {
-        let total: usize = possible_answers
-            .iter()
-            .map(|answer| {
-                Self::rank_guess_against_answer::<F>(
-                    guess,
-                    answer,
-                    valid_guesses,
-                    possible_answers,
+        valid_guesses: &[<F as Family>::Word],
+        possible_answers: &[<F as Family>::Word],
+    ) -> Vec<(<F as Family>::Word, f32)> {
+        let mut sorted_guesses: Vec<_> = valid_guesses
+            .into_par_iter()
+            .map(|guess| {
+                (
+                    *guess,
+                    self.rank_guess::<F>(guess, valid_guesses, possible_answers),
                 )
-                // Self::rank_guess_against_answer_deque(
-                //     guess,
-                //     answer,
-                //     valid_guesses,
-                //     possible_answers,
-                //     _pattern_cache,
-                // )
             })
-            .sum();
-        (total as f32) / (possible_answers.len() as f32)
+            .collect();
+
+        sorted_guesses
+            .as_parallel_slice_mut()
+            .sort_unstable_by(|(_w1, n1), (_w2, n2)| n1.partial_cmp(n2).unwrap());
+
+        sorted_guesses
     }
 }
 
@@ -57,19 +56,19 @@ impl BfsGuesser {
         let valid_guesses = BTreeSet::from_iter(valid_guesses.iter());
 
         let first_pattern = F::Pattern::from_guess(first_guess, answer);
-        let first_answeres_left = possible_answers
+        let first_answers_left = possible_answers
             .iter()
             .filter(|answer| answer.matches(&first_pattern, first_guess))
             .count();
 
-        if first_answeres_left <= Self::LEN_TO_FIND {
+        if first_answers_left <= Self::LEN_TO_FIND {
             return 1;
         }
 
         let mut queue = PriorityQueue::new();
         queue.push(
             BTreeSet::from_iter(std::iter::once(first_guess)),
-            P::new(1, first_answeres_left),
+            P::new(1, first_answers_left),
         );
 
         while let Some((already_guessed, p)) = queue.pop() {
@@ -114,6 +113,24 @@ impl BfsGuesser {
         }
 
         panic!("out of guesses!");
+    }
+
+    fn rank_guess<F: Family>(
+        &self,
+        guess: &F::Word,
+        valid_guesses: &[F::Word],
+        possible_answers: &[F::Word],
+    ) -> f32
+    where
+        F::Word: Hash,
+    {
+        let total: usize = possible_answers
+            .iter()
+            .map(|answer| {
+                Self::rank_guess_against_answer::<F>(guess, answer, valid_guesses, possible_answers)
+            })
+            .sum();
+        (total as f32) / (possible_answers.len() as f32)
     }
 }
 

@@ -15,12 +15,10 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use words::Word1;
+use words_family::Family;
 
 pub mod game;
-pub mod guesser;
 pub mod guesser_family;
-pub mod words;
 pub mod words_family;
 
 #[derive(Deserialize)]
@@ -38,12 +36,12 @@ impl StringDictionary {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct Dictionary<const N: usize> {
-    pub valid: Vec<Word1<N>>,
-    pub answers: Vec<Word1<N>>,
+pub struct Dictionary<F: Family> {
+    pub valid: Vec<F::Word>,
+    pub answers: Vec<F::Word>,
 }
 
-impl<const N: usize> Dictionary<N> {
+impl<F: Family> Dictionary<F> {
     fn normalized(mut self) -> Self {
         self.answers.sort_unstable();
         self.answers.dedup();
@@ -73,13 +71,13 @@ impl<const N: usize> Dictionary<N> {
         path_valid: P,
         path_answers: P,
     ) -> Result<Self, Box<dyn Error>> {
-        let valid: Vec<_> = std::fs::read_to_string(path_valid)?
+        let valid = std::fs::read_to_string(path_valid)?
             .lines()
-            .map(Word1::from_str)
+            .map(F::Word::from_str)
             .collect::<Result<_, _>>()?;
-        let answers: Vec<_> = std::fs::read_to_string(path_answers)?
+        let answers = std::fs::read_to_string(path_answers)?
             .lines()
-            .map(Word1::from_str)
+            .map(F::Word::from_str)
             .collect::<Result<_, _>>()?;
 
         Ok(Self { valid, answers }.normalized())

@@ -1,7 +1,11 @@
 use clap::{builder::PossibleValue, Parser, ValueEnum, ValueHint};
 use rustybovich::{
     game::Game,
-    guesser::{BfsGuesser, GuesserWrapper, NaiveGuesser},
+    guesser_family::{
+        bfs_guesser::BfsGuesser,
+        bfs_guesser_cached_patterns::BfsGuesserCachedPatterns,
+    },
+    words_family::words_1::Family1,
     Dictionary,
 };
 
@@ -9,17 +13,19 @@ use rustybovich::{
 enum GuesserType {
     Naive,
     Bfs,
+    BfsCache,
 }
 
 impl ValueEnum for GuesserType {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Naive, Self::Bfs]
+        &[Self::Naive, Self::Bfs, Self::BfsCache]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         Some(match self {
             Self::Naive => PossibleValue::new("naive"),
             Self::Bfs => PossibleValue::new("bfs"),
+            Self::BfsCache => PossibleValue::new("bfs-cache"),
         })
     }
 }
@@ -35,13 +41,24 @@ struct Arguments {
 
 fn main() {
     let args = Arguments::parse();
-    let dictionary = Dictionary::read_from_json(args.dictionary).unwrap();
+    let dictionary = Dictionary::<Family1<5>>::read_from_json(args.dictionary).unwrap();
     let guesser = match args.guesser {
-        GuesserType::Naive => GuesserWrapper::Naive(NaiveGuesser),
-        GuesserType::Bfs => GuesserWrapper::Bfs(BfsGuesser),
+        GuesserType::Naive => unreachable!(),
+        GuesserType::Bfs => {
+            unreachable!();
+            // BfsGuesser
+        }
+        GuesserType::BfsCache => {
+            BfsGuesserCachedPatterns::new(&dictionary.valid)
+            // unreachable!()
+        }
     };
 
-    let game = Game::<5>::new(dictionary.valid, dictionary.answers, guesser);
+    let game = Game::<Family1<5>, _>::new(
+        dictionary.valid.clone(),
+        dictionary.answers.clone(),
+        guesser,
+    );
     game.run();
 
     // Dictionary::<5>::read_from_txt("assets/en-nyt-2.valid.txt", "assets/en-nyt-2.answers.txt")

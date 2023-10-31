@@ -48,6 +48,8 @@ where
     <F::Word as FromStr>::Err: std::fmt::Debug,
     <F::Pattern as FromStr>::Err: std::fmt::Debug,
 {
+    const N: usize = 5;
+    
     pub fn new(valid: Vec<F::Word>, answers: Vec<F::Word>, guesser: G) -> Self {
         Self {
             valid,
@@ -174,7 +176,7 @@ where
                 let word = std::iter::once(line)
                     .chain(std::io::stdin().lines().map(Result::unwrap))
                     .find(|word| match word.chars().count() {
-                        n if n == N => {
+                        n if n == Self::N => {
                             if self.valid.contains(&F::Word::from_str(word).unwrap()) {
                                 true
                             } else {
@@ -183,7 +185,7 @@ where
                             }
                         }
                         n => {
-                            println!("expecting {} letters, found {}", N, n);
+                            println!("expecting {} letters, found {}", Self::N, n);
                             false
                         }
                     })
@@ -193,9 +195,9 @@ where
                     .lines()
                     .map(Result::unwrap)
                     .find(|word| match word.chars().count() {
-                        n if n == N => true,
+                        n if n == Self::N => true,
                         n => {
-                            println!("expecting {} colors, found {}", N, n);
+                            println!("expecting {} colors, found {}", Self::N, n);
                             false
                         }
                     })

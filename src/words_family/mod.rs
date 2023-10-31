@@ -6,7 +6,7 @@ use std::{
 
 use serde::{de::DeserializeOwned, Serialize};
 
-mod words_1;
+pub mod words_1;
 
 pub trait Family {
     type Word: WordTrait<F = Self>;
@@ -25,13 +25,13 @@ where
         + Debug
         + Display
         + FromStr
+        + FromStrErrorHelper
         + Serialize
         + DeserializeOwned
         + Send
         + Sync,
-    // <Self as FromStr>::Err: Debug,
 {
-    type F: Family;
+    type F: Family<Word = Self>;
     type Data;
 
     fn matches(&self, pattern: &Pattern<Self::F>, guess: &Self) -> bool;
@@ -40,10 +40,9 @@ where
 
 pub trait PatternTrait
 where
-    Self: Sized + Debug + Display + FromStr,
-    // <Self as FromStr>::Err: Debug,
+    Self: Sized + Debug + Display + FromStr + FromStrErrorHelper,
 {
-    type F: Family;
+    type F: Family<Pattern = Self>;
     type Data;
 
     fn new(pattern: Self::Data) -> Self;
@@ -69,4 +68,19 @@ impl Display for LetterType {
         };
         write!(f, "{}", '■'.style(style))
     }
+}
+
+pub trait FromStrErrorHelper
+where
+    Self: FromStr<Err = Self::FromStrErr>,
+{
+    type FromStrErr: std::error::Error + 'static;
+}
+
+impl<T> FromStrErrorHelper for T
+where
+    T: FromStr,
+    <T as FromStr>::Err: std::error::Error + 'static,
+{
+    type FromStrErr = <T as FromStr>::Err;
 }
