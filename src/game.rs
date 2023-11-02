@@ -37,23 +37,23 @@ enum Command {
     PatternDescription { colors: String, word: String },
 }
 
-pub struct Game<F: Family, G: Guesser<F>> {
+pub struct Game<F: Family> {
     valid: Vec<F::Word>,
     answers: Vec<F::Word>,
-    guesser: G,
+    guesser: Box<dyn Guesser<F>>,
 }
 
-impl<F: Family, G: Guesser<F>> Game<F, G>
+impl<F: Family> Game<F>
 where
     <F::Word as FromStr>::Err: std::fmt::Debug,
     <F::Pattern as FromStr>::Err: std::fmt::Debug,
 {
     const N: usize = 5;
-    
-    pub fn new(valid: Vec<F::Word>, answers: Vec<F::Word>, guesser: G) -> Self {
+
+    pub fn new(valid: &[F::Word], answers: &[F::Word], guesser: Box<dyn Guesser<F>>) -> Self {
         Self {
-            valid,
-            answers,
+            valid: valid.to_vec(),
+            answers: answers.to_vec(),
             guesser,
         }
     }
@@ -99,11 +99,9 @@ where
                         Mode::Hard => &possible_answers,
                         Mode::Normal => &self.valid,
                     };
-                    ranked_guesses = self.guesser.rank_guesses(
-                        valid_guesses,
-                        &possible_answers,
-                        // pattern_cache
-                    );
+                    ranked_guesses =
+                        self.guesser
+                            .rank_guesses(valid_guesses, &possible_answers, true);
 
                     {
                         println!("writing guesses");

@@ -4,6 +4,8 @@ use rustybovich::{
     guesser_family::{
         bfs_guesser::BfsGuesser,
         bfs_guesser_cached_patterns::BfsGuesserCachedPatterns,
+        BfsGuesserFullCache,
+        Guesser,
     },
     words_family::words_1::Family1,
     Dictionary,
@@ -14,11 +16,12 @@ enum GuesserType {
     Naive,
     Bfs,
     BfsCache,
+    BfsFullCache,
 }
 
 impl ValueEnum for GuesserType {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Naive, Self::Bfs, Self::BfsCache]
+        &[Self::Naive, Self::Bfs, Self::BfsCache, Self::BfsFullCache]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
@@ -26,6 +29,7 @@ impl ValueEnum for GuesserType {
             Self::Naive => PossibleValue::new("naive"),
             Self::Bfs => PossibleValue::new("bfs"),
             Self::BfsCache => PossibleValue::new("bfs-cache"),
+            Self::BfsFullCache => PossibleValue::new("bfs-full-cache"),
         })
     }
 }
@@ -42,23 +46,14 @@ struct Arguments {
 fn main() {
     let args = Arguments::parse();
     let dictionary = Dictionary::<Family1<5>>::read_from_json(args.dictionary).unwrap();
-    let guesser = match args.guesser {
+    let guesser: Box<dyn Guesser<Family1<5>>> = match args.guesser {
         GuesserType::Naive => unreachable!(),
-        GuesserType::Bfs => {
-            unreachable!();
-            // BfsGuesser
-        }
-        GuesserType::BfsCache => {
-            BfsGuesserCachedPatterns::new(&dictionary.valid)
-            // unreachable!()
-        }
+        GuesserType::Bfs => Box::new(BfsGuesser::new()),
+        GuesserType::BfsCache => Box::new(BfsGuesserCachedPatterns::new(&dictionary.valid)),
+        GuesserType::BfsFullCache => Box::new(BfsGuesserFullCache::new(&dictionary.valid)),
     };
 
-    let game = Game::<Family1<5>, _>::new(
-        dictionary.valid.clone(),
-        dictionary.answers.clone(),
-        guesser,
-    );
+    let game = Game::<Family1<5>>::new(&dictionary.valid, &dictionary.answers, guesser);
     game.run();
 
     // Dictionary::<5>::read_from_txt("assets/en-nyt-2.valid.txt", "assets/en-nyt-2.answers.txt")

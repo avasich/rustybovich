@@ -7,6 +7,7 @@ use std::{
 use serde::{de::DeserializeOwned, Serialize};
 
 pub mod words_1;
+pub use words_1::{Family1, Pattern1, Word1};
 
 pub trait Family {
     type Word: WordTrait<F = Self>;

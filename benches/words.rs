@@ -1,26 +1,12 @@
-use std::str::FromStr;
-
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
-use rustybovich::words::{Pattern1, Pattern2, Word1, Word2};
+use rustybovich::words_family::{Pattern1, PatternTrait, Word1, WordTrait};
 
 fn pattern_and_words_w1<const N: usize>(
     pattern: &str,
     guess: &str,
     answer: &str,
 ) -> (Pattern1<N>, Word1<N>, Word1<N>) {
-    (
-        Pattern1::from_description(guess, pattern).unwrap(),
-        Word1::from_str(guess).unwrap(),
-        Word1::from_str(answer).unwrap(),
-    )
-}
-
-fn pattern_and_words_w2<const N: usize>(
-    pattern: &str,
-    guess: &str,
-    answer: &str,
-) -> (Pattern2<N>, Word2<N>, Word2<N>) {
     (
         pattern.parse().unwrap(),
         guess.parse().unwrap(),
@@ -72,13 +58,6 @@ fn data_correct_size_5_w1() -> Vec<(Pattern1<5>, Word1<5>, Word1<5>)> {
         .collect_vec()
 }
 
-fn data_correct_size_5_w2() -> Vec<(Pattern2<5>, Word2<5>, Word2<5>)> {
-    data_correct_size_5_raw()
-        .into_iter()
-        .map(|(pattern, guess, answer)| pattern_and_words_w2(pattern, guess, answer))
-        .collect_vec()
-}
-
 fn data_incorrect_size_5_w1() -> Vec<(Pattern1<5>, Word1<5>, Word1<5>)> {
     data_incorrect_size_5_raw()
         .into_iter()
@@ -86,24 +65,10 @@ fn data_incorrect_size_5_w1() -> Vec<(Pattern1<5>, Word1<5>, Word1<5>)> {
         .collect_vec()
 }
 
-fn data_incorrect_size_5_w2() -> Vec<(Pattern2<5>, Word2<5>, Word2<5>)> {
-    data_incorrect_size_5_raw()
-        .into_iter()
-        .map(|(pattern, guess, answer)| pattern_and_words_w2(pattern, guess, answer))
-        .collect_vec()
-}
-
 fn data_correct_size_7_w1() -> Vec<(Pattern1<7>, Word1<7>, Word1<7>)> {
     data_correct_size_7_raw()
         .into_iter()
         .map(|(pattern, guess, answer)| pattern_and_words_w1(pattern, guess, answer))
-        .collect_vec()
-}
-
-fn data_correct_size_7_w2() -> Vec<(Pattern2<7>, Word2<7>, Word2<7>)> {
-    data_correct_size_7_raw()
-        .into_iter()
-        .map(|(pattern, guess, answer)| pattern_and_words_w2(pattern, guess, answer))
         .collect_vec()
 }
 
@@ -117,26 +82,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("from_guess:size_5-w2", |b| {
-        let data = data_correct_size_5_w2();
-        b.iter(|| {
-            data.iter().for_each(|(_pattern, guess, answer)| {
-                black_box(Pattern2::from_guess(guess, answer));
-            })
-        })
-    });
-
     c.bench_function("matches_correct:size_5-w1", |b| {
         let data = data_correct_size_5_w1();
-        b.iter(|| {
-            data.iter().for_each(|(pattern, _guess, answer)| {
-                answer.matches(pattern);
-            })
-        })
-    });
-
-    c.bench_function("matches_correct:size_5-w2", |b| {
-        let data = data_correct_size_5_w2();
         b.iter(|| {
             data.iter().for_each(|(pattern, guess, answer)| {
                 answer.matches(pattern, guess);
@@ -147,15 +94,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("matches_incorrect:size_5-w1", |b| {
         let data = data_incorrect_size_5_w1();
         b.iter(|| {
-            data.iter().for_each(|(pattern, _guess, answer)| {
-                answer.matches(pattern);
-            })
-        })
-    });
-
-    c.bench_function("matches_incorrect:size_5-w2", |b| {
-        let data = data_incorrect_size_5_w2();
-        b.iter(|| {
             data.iter().for_each(|(pattern, guess, answer)| {
                 answer.matches(pattern, guess);
             })
@@ -164,15 +102,6 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("matches_correct:size_7-w1", |b| {
         let data = data_correct_size_7_w1();
-        b.iter(|| {
-            data.iter().for_each(|(pattern, _guess, answer)| {
-                answer.matches(pattern);
-            })
-        })
-    });
-
-    c.bench_function("matches_correct:size_7-w1", |b| {
-        let data = data_correct_size_7_w2();
         b.iter(|| {
             data.iter().for_each(|(pattern, guess, answer)| {
                 answer.matches(pattern, guess);

@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::BTreeSet, hash::Hash};
+use std::{cmp::Ordering, collections::BTreeSet, hash::Hash, marker::PhantomData};
 
 use priority_queue::PriorityQueue;
 use rayon::{
@@ -11,9 +11,11 @@ use crate::{
     words_family::{Family, PatternTrait, WordTrait},
 };
 
-pub struct BfsGuesser;
+pub struct BfsGuesser<F: Family> {
+    _f: PhantomData<F>,
+}
 
-impl<F: Family> Guesser<F> for BfsGuesser
+impl<F: Family + Send + Sync> Guesser<F> for BfsGuesser<F>
 where
     F::Word: Hash,
 {
@@ -21,14 +23,27 @@ where
         &self,
         valid_guesses: &[<F as Family>::Word],
         possible_answers: &[<F as Family>::Word],
+        progress: bool,
     ) -> Vec<(<F as Family>::Word, f32)> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let total_guesses = valid_guesses.len();
+        let counter = AtomicUsize::new(0);
+
         let mut sorted_guesses: Vec<_> = valid_guesses
             .into_par_iter()
             .map(|guess| {
-                (
+                let res = (
                     *guess,
-                    self.rank_guess::<F>(guess, valid_guesses, possible_answers),
-                )
+                    self.rank_guess(guess, valid_guesses, possible_answers),
+                );
+
+                let completed = counter.fetch_add(1, Ordering::SeqCst);
+                if progress {
+                    print!("\rguess {completed}/{total_guesses} '{guess}'");
+                }
+
+                res
             })
             .collect();
 
@@ -40,11 +55,11 @@ where
     }
 }
 
-impl BfsGuesser {
+impl<F: Family> BfsGuesser<F> {
     const LEN_TO_FIND: usize = 1;
     const MAX_DEPTH: usize = 3;
 
-    fn rank_guess_against_answer<F: Family>(
+    fn rank_guess_against_answer(
         first_guess: &F::Word,
         answer: &F::Word,
         valid_guesses: &[F::Word],
@@ -115,7 +130,7 @@ impl BfsGuesser {
         panic!("out of guesses!");
     }
 
-    fn rank_guess<F: Family>(
+    fn rank_guess(
         &self,
         guess: &F::Word,
         valid_guesses: &[F::Word],
@@ -127,10 +142,14 @@ impl BfsGuesser {
         let total: usize = possible_answers
             .iter()
             .map(|answer| {
-                Self::rank_guess_against_answer::<F>(guess, answer, valid_guesses, possible_answers)
+                Self::rank_guess_against_answer(guess, answer, valid_guesses, possible_answers)
             })
             .sum();
         (total as f32) / (possible_answers.len() as f32)
+    }
+
+    pub fn new() -> Self {
+        Self { _f: PhantomData }
     }
 }
 
