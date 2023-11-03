@@ -46,13 +46,16 @@ impl<const N: usize> WordTrait for Word1<N> {
             .enumerate()
             .all(|(n, (pattern_letter, guess_letter))| match pattern_letter {
                 Correct => true,
-                Misplaced => answer
-                    .iter()
-                    .position(|answer_letter| {
-                        answer_letter.is_some_and(|letter| letter == *guess_letter)
-                    })
-                    .and_then(|j| answer[j].take_if(|_| n != j))
-                    .is_some(),
+                Misplaced => {
+                    !answer[n].is_some_and(|answer_letter| answer_letter == *guess_letter)
+                        && answer
+                            .iter()
+                            .position(|answer_letter| {
+                                answer_letter.is_some_and(|letter| letter == *guess_letter)
+                            })
+                            .and_then(|j| answer[j].take())
+                            .is_some()
+                }
                 Absent => answer
                     .iter()
                     .flatten()
@@ -126,7 +129,6 @@ impl<const N: usize> PatternTrait for Pattern1<N> {
         Self { data: pattern }
     }
 }
-
 
 impl<const N: usize> std::str::FromStr for Pattern1<N> {
     type Err = IteratorIntoArrayError;

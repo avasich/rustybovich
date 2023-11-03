@@ -1,24 +1,25 @@
 use std::{
     cmp::Ordering,
-    collections::{BTreeSet, HashMap},
+    collections::{HashMap, VecDeque},
     hash::Hash,
 };
 
-use priority_queue::PriorityQueue;
-use rayon::{
-    prelude::{IntoParallelIterator, ParallelIterator},
-    slice::ParallelSliceMut,
-};
+use itertools::Itertools;
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 use super::Guesser;
 use crate::words_family::{Family, Pattern1, PatternTrait};
+
+const LEN_TO_FIND: usize = 1;
+const MAX_DEPTH: usize = 3;
 
 pub struct BfsGuesserFullCache<F: Family>
 where
     F::Pattern: PatternToU8,
     F::Word: Hash,
 {
-    patterns: Vec<Vec<u8>>,
+    patterns: Vec<u8>,
+    size: usize,
     words_indices: HashMap<F::Word, usize>,
 }
 
@@ -47,17 +48,13 @@ where
     F::Pattern: PatternToU8,
     F::Word: Hash,
 {
-    const LEN_TO_FIND: usize = 1;
-    const MAX_DEPTH: usize = 3;
-
     pub fn new(valid: &'a [F::Word]) -> Self {
         let patterns = valid
-            .into_par_iter()
-            .map(|guess| {
+            .iter()
+            .flat_map(|guess| {
                 valid
                     .iter()
                     .map(|answer| F::Pattern::from_guess(guess, answer).as_u8())
-                    .collect()
             })
             .collect();
 
@@ -70,74 +67,109 @@ where
         Self {
             patterns,
             words_indices,
+            size: valid.len(),
         }
+    }
+
+    fn pattern(&self, guess_index: usize, answer_index: usize) -> u8 {
+        self.patterns[guess_index * self.size + answer_index]
+    }
+
+    fn hash(&self, &guesses: &[Option<usize>; MAX_DEPTH]) -> u64 {
+        // let mut bytes = [u8::MAX; 2 * MAX_DEPTH];
+
+        // guesses
+        //     .iter()
+        //     .take_while(|guess| guess.is_some())
+        //     .map(|guess| guess.unwrap())
+        //     .enumerate()
+        //     .for_each(|(i, guess)| {
+        //         bytes[2 * i..2 * i + 2].copy_from_slice(&(guess as u16).to_le_bytes());
+        //     });
+
+        // bytes
+
+        let n = guesses.iter().take_while(|guess| guess.is_some()).count();
+        guesses
+            .iter()
+            .take_while(|guess| guess.is_some())
+            .map(|guess| guess.unwrap())
+            .enumerate()
+            .map(|(i, g)| g * self.size.pow(n as u32 - i as u32))
+            .sum::<usize>() as u64
     }
 
     fn rank_guess_against_answer(
         &self,
-        guess_index: usize,
-        answer_index: usize,
-        valid_guesses: &BTreeSet<usize>,
-        possible_answers_indices: &[usize],
-        cache: &mut HashMap<BTreeSet<usize>, usize>,
+        guess: usize,
+        answer: usize,
+        valid_guesses: &[Option<usize>],
+        possible_answers: &[usize],
+        // cache: &mut HashMap<[Option<usize>; MAX_DEPTH], usize>,
+        cache: &mut HashMap<u64, usize>,
     ) -> usize {
-        let first_pattern = self.patterns[guess_index][answer_index];
+        let first_pattern = self.pattern(guess, answer);
+        let mut initial_guesses = [None; MAX_DEPTH];
+        initial_guesses[0] = Some(guess);
 
-        let initial_set = BTreeSet::from_iter(std::iter::once(guess_index));
-
-        let answers_left = possible_answers_indices
+        let answers_left = possible_answers
             .iter()
-            .filter(|&&possible_answer_index| {
-                self.patterns[guess_index][possible_answer_index] == first_pattern
-            })
+            .filter(|&&possible_answer| self.pattern(guess, possible_answer) == first_pattern)
             .count();
-        // cache.insert(initial_set.clone(), answers_left);
+        cache.insert(self.hash(&initial_guesses), answers_left);
 
-        if answers_left <= Self::LEN_TO_FIND {
+        if answers_left <= LEN_TO_FIND {
             return 1;
         }
 
-        let mut queue = PriorityQueue::new();
-        queue.push(initial_set, P::new(1, answers_left));
+        let mut queue = VecDeque::new();
+        queue.push_back(initial_guesses);
 
-        while let Some((already_guessed, _p)) = queue.pop() {
-            // too deep, we can do better
-            if already_guessed.len() >= Self::MAX_DEPTH {
-                return already_guessed.len();
+        while let Some(already_guessed) = queue.pop_front() {
+            if already_guessed[MAX_DEPTH - 1].is_some() {
+                return MAX_DEPTH;
             }
 
-            let new_guesses = valid_guesses.difference(&already_guessed).map(|&guess| {
-                let mut new_guesses = already_guessed.clone();
-                new_guesses.insert(guess);
-                new_guesses
-            });
-
-            for guesses in new_guesses {
-                if let Some(res) = cache.get(&guesses) {
-                    return *res;
-                }
-
-                let answers_left = possible_answers_indices
-                    .iter()
-                    .filter(|&&possible_answer_index| {
-                        guesses
+            let res = valid_guesses
+                .iter()
+                .filter(|&&guess| !already_guessed.contains(&guess))
+                .map(|guess| {
+                    let mut new_guesses = already_guessed;
+                    new_guesses[MAX_DEPTH - 1] = *guess;
+                    insertion_sort(&mut new_guesses, Option::gt);
+                    new_guesses
+                })
+                .find_map(|guesses| match cache.get(&self.hash(&guesses)) {
+                    Some(answers_left) => Some(*answers_left),
+                    None => {
+                        let answers_left = possible_answers
                             .iter()
-                            .map(|&guess_index| &self.patterns[guess_index])
-                            .all(|patterns| {
-                                patterns[answer_index] == patterns[possible_answer_index]
+                            .filter(|&&possible_answers| {
+                                guesses
+                                    .iter()
+                                    .take_while(|guess| guess.is_some())
+                                    .map(|guess| guess.unwrap())
+                                    .all(|guess| {
+                                        self.pattern(guess, answer)
+                                            == self.pattern(guess, possible_answers)
+                                    })
                             })
-                    })
-                    .count();
+                            .count();
 
-                cache.insert(guesses.clone(), answers_left);
+                        cache.insert(self.hash(&guesses), answers_left);
 
-                let depth = guesses.len();
+                        if answers_left <= LEN_TO_FIND {
+                            let depth = guesses.iter().take_while(|guess| guess.is_some()).count();
+                            Some(depth)
+                        } else {
+                            queue.push_back(guesses);
+                            None
+                        }
+                    }
+                });
 
-                if answers_left <= Self::LEN_TO_FIND {
-                    return depth;
-                }
-
-                queue.push(guesses, P::new(depth, answers_left));
+            if let Some(res) = res {
+                return res;
             }
         }
 
@@ -158,11 +190,11 @@ where
     ) -> Vec<(F::Word, f32)> {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        let valid_guesses_indices = BTreeSet::from_iter(
-            valid_guesses
-                .iter()
-                .map(|word| *self.words_indices.get(word).unwrap()),
-        );
+        let valid_guesses_indices: Vec<_> = valid_guesses
+            .iter()
+            .map(|word| *self.words_indices.get(word).unwrap())
+            .map(Option::Some)
+            .collect();
         let possible_answers_indices: Vec<_> = possible_answers
             .iter()
             .map(|word| *self.words_indices.get(word).unwrap())
@@ -171,13 +203,13 @@ where
         let total_answers = possible_answers.len();
         let counter = AtomicUsize::new(0);
 
-        let ranks: Vec<Vec<_>> = possible_answers_indices
-            .clone()
-            .into_par_iter()
-            .map(|answer_index| {
+        let ranks: Vec<_> = possible_answers_indices
+            .par_iter()
+            .map(|&answer_index| {
                 let mut cache = HashMap::new();
                 let res = valid_guesses_indices
                     .iter()
+                    .flatten()
                     .map(|&guess_index| {
                         self.rank_guess_against_answer(
                             guess_index,
@@ -187,34 +219,32 @@ where
                             &mut cache,
                         )
                     })
-                    .collect();
+                    .collect_vec();
 
                 if progress {
                     let completed = counter.fetch_add(1, Ordering::SeqCst);
                     print!("\ranswer {completed}/{total_answers}");
+                    // println!();
+                    // println!("{:?}", cache.keys().max());
                 }
                 res
             })
-            .collect();
+            .reduce_with(|mut res, rks| {
+                res.iter_mut().zip(rks).for_each(|(r, rank)| *r += rank);
+                res
+            })
+            .unwrap();
 
         if progress {
             println!();
         }
 
-        let mut sorted_guesses: Vec<_> = valid_guesses_indices
+        valid_guesses
             .iter()
-            .map(|&guess_index| {
-                let rk = ranks.iter().map(|rank| rank[guess_index]).sum::<usize>() as f32
-                    / ranks.len() as f32;
-                (valid_guesses[guess_index], rk)
-            })
-            .collect();
-
-        sorted_guesses
-            .as_parallel_slice_mut()
-            .sort_unstable_by(|(_w1, n1), (_w2, n2)| n1.partial_cmp(n2).unwrap());
-
-        sorted_guesses
+            .copied()
+            .zip(ranks.iter().map(|&rk| rk as f32 / total_answers as f32))
+            .sorted_unstable_by(|(_, rk1), (_, rk2)| rk1.partial_cmp(rk2).unwrap())
+            .collect_vec()
     }
 }
 
@@ -242,5 +272,19 @@ impl PartialOrd for P {
 impl Ord for P {
     fn cmp(&self, other: &Self) -> Ordering {
         (other.depth, other.answers_left).cmp(&(self.depth, self.answers_left))
+    }
+}
+
+pub fn insertion_sort<T, F>(arr: &mut [T], is_less: F)
+where
+    T: PartialOrd,
+    F: Fn(&T, &T) -> bool,
+{
+    for i in 1..arr.len() {
+        let mut j = i;
+        while j > 0 && is_less(&arr[j], &arr[j - 1]) {
+            unsafe { arr.swap_unchecked(j - 1, j) };
+            j -= 1;
+        }
     }
 }

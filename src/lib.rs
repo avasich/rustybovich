@@ -4,6 +4,9 @@
 #![feature(result_option_inspect)]
 #![feature(test)]
 #![feature(fn_traits)]
+#![feature(slice_internals)]
+#![feature(slice_swap_unchecked)]
+#![feature(is_sorted)]
 
 use std::{
     error::Error,

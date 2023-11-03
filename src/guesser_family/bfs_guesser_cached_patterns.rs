@@ -108,7 +108,7 @@ where
         while let Some((already_guessed, _p)) = queue.pop() {
             // too deep, we can do better
             if already_guessed.len() >= Self::MAX_DEPTH {
-                return already_guessed.len();
+                return Self::MAX_DEPTH;
             }
 
             let new_guesses = valid_guesses.difference(&already_guessed).map(|&guess| {
@@ -122,8 +122,6 @@ where
                     continue;
                 }
 
-                let depth = guesses.len();
-
                 let answers_left = possible_answers_indices
                     .iter()
                     .filter(|&&possible_answer_index| {
@@ -133,6 +131,8 @@ where
                         })
                     })
                     .count();
+
+                let depth = guesses.len();
 
                 if answers_left <= Self::LEN_TO_FIND {
                     return depth;
